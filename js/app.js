@@ -163,6 +163,16 @@
       UI.showToast('检测到另一个标签页在运行，本页已停止自动存档');
     });
 
+    // 8.3 弟子叛出必须让玩家知道——否则只会发现"弟子莫名其妙少了一个"
+    GameEngine.on('discipleBetrayed', ({ name }) => {
+      UI.showToast(`${name} 道心动摇，已叛出师门`);
+      SoundFX.play('deny');
+      Haptic.heavy();
+      UI._sectCache = {};
+      UI._needsFullRebuild = true;
+      if (typeof CharacterVoice !== 'undefined') CharacterVoice.say('hurt', 300);
+    });
+
     // 8. 页面卸载 / 隐藏前保存
     window.addEventListener('beforeunload', () => {
       SaveSystem.save(GameEngine.state);

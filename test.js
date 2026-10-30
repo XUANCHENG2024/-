@@ -1610,6 +1610,120 @@ test('弟子产出贡献与灵石', () => {
 });
 
 // ===========================
+// 18. 跨系统一致性（轮回 / 离线 / 每日重置）
+// ===========================
+console.log('\n=== 18. 跨系统一致性 ===');
+
+function rebirthReadyState() {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = 6;
+  GameEngine.state.level = 9;
+  GameEngine.state.stone = 50000;
+  GameEngine.state.spiritSense = 99;
+  GameEngine.state.mana = 999;
+  GameEngine.state.health = 999;
+  GameEngine.state.cultivation = calcQ(6, 9, 1.0);
+  GameEngine.state.totalCultivation = 70000;
+  SectSystem.ensure();
+  DiscipleSystem.ensure();
+  SectSystem.join();
+  SectSystem.data.contrib = 4000;
+  SectSystem.data.prestige = 2500;
+  SectSystem._refreshRank();
+  return GameEngine.state;
+}
+
+test('轮回保留宗门身份、职位、声望、贡献与弟子', () => {
+  rebirthReadyState();
+  DiscipleSystem.recruit();
+
+  const before = {
+    joined: SectSystem.data.joined,
+    rank: SectSystem.data.rank,
+    contrib: SectSystem.data.contrib,
+    prestige: SectSystem.data.prestige,
+    disciples: DiscipleSystem.count,
+  };
+
+  const r = GameEngine.rebirth();
+  assert(r.ok, '应可轮回');
+
+  assertEq(SectSystem.data.joined, before.joined, '宗门身份应保留');
+  assertEq(SectSystem.data.rank, before.rank, '职位应保留');
+  assertEq(SectSystem.data.contrib, before.contrib, '贡献应保留');
+  assertEq(SectSystem.data.prestige, before.prestige, '声望应保留');
+  assertEq(DiscipleSystem.count, before.disciples, '弟子应保留');
+});
+
+test('轮回仍会重置境界与资源', () => {
+  rebirthReadyState();
+  GameEngine.rebirth();
+  assertEq(GameEngine.state.realm, 1, '境界应归零');
+  assertEq(GameEngine.state.level, 1, '小阶应归零');
+  assert(GameEngine.state.stone < 1000, '灵石应按默认档重置');
+  assert(GameEngine.state.dao > 0, '道行应结算');
+});
+
+test('职位只升不降：声望异常清零不回退', () => {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = 3;
+  SectSystem.ensure();
+  SectSystem.join();
+  SectSystem.data.contrib = 4000;
+  SectSystem.data.prestige = 2500;
+  SectSystem._refreshRank();
+  const rank = SectSystem.data.rank;
+  assert(rank > 0, '应先升上去');
+
+  SectSystem.data.prestige = 0;
+  SectSystem._refreshRank();
+  assertEq(SectSystem.data.rank, rank, '不应因声望归零而掉级');
+});
+
+test('弟子离线照常产出贡献', () => {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = 3;
+  GameEngine.state.stone = 5000;
+  SectSystem.ensure();
+  DiscipleSystem.ensure();
+  SectSystem.join();
+  SectSystem.data.contrib = 2000;
+  SectSystem.data.prestige = 999;
+  SectSystem._refreshRank();
+  DiscipleSystem.recruit();
+  const d = DiscipleSystem.list[0];
+  d.aptitude = 5;
+  d.loyalty = 80;
+
+  const st = JSON.parse(JSON.stringify(GameEngine.state));
+  st.lastSaveTicks = Date.now() - 3 * 3600 * 1000;
+  const off = SaveSystem.calculateOfflineGains(st, Date.now());
+  assert(off, '应算出离线收益');
+  assert(off.contrib > 0, `离线应有弟子贡献，实际 ${off.contrib}`);
+});
+
+test('弟子离线不会因忠诚流失而叛出', () => {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = 3;
+  GameEngine.state.stone = 5000;
+  SectSystem.ensure();
+  DiscipleSystem.ensure();
+  SectSystem.join();
+  SectSystem.data.contrib = 2000;
+  SectSystem.data.prestige = 999;
+  SectSystem._refreshRank();
+  DiscipleSystem.recruit();
+  const d = DiscipleSystem.list[0];
+  d.loyalty = 25;   // 偏低但还不到叛出线
+
+  const st = JSON.parse(JSON.stringify(GameEngine.state));
+  st.lastSaveTicks = Date.now() - 8 * 3600 * 1000;
+  SaveSystem.calculateOfflineGains(st, Date.now());
+  // 离线结算不应修改存档里的忠诚
+  assertEq(st.disciples[0].loyalty, 25, '离线不应扣忠诚');
+});
+
+// ===========================
 // 测试报告
 // ===========================
 console.log('\n' + '='.repeat(50));

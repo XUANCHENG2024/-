@@ -508,7 +508,7 @@ const GameEngine = {
     return Math.max(GameConfig.rebirth.minDao, g);
   },
 
-  /** 入轮回：重置境界与资源，保留道行、功法、宠物 */
+  /** 入轮回：重置境界与资源，保留道行、功法、宠物、宗门与弟子 */
   rebirth() {
     if (!this.canRebirth) return { ok: false, msg: '尚未圆满（需渡劫 9 层且修为满）' };
 
@@ -516,9 +516,24 @@ const GameEngine = {
     const dao = (this.state.dao || 0) + gain;
     const n = (this.state.rebirths || 0) + 1;
 
+    // 宗门与弟子必须跨轮回保留。
+    // 原实现直接 createDefault()，把 sect / disciples 一起重置了 ——
+    // 而设计文档与 GDD 附录 E 都写着"轮回不重置宗门"，
+    // 结果是每转一次就白干十几天的宗门进度，职位、声望、徒弟全没。
+    let keptSect = null;
+    let keptDisciples = [];
+    try {
+      keptSect = this.state.sect ? JSON.parse(JSON.stringify(this.state.sect)) : null;
+      keptDisciples = Array.isArray(this.state.disciples) ? JSON.parse(JSON.stringify(this.state.disciples)) : [];
+    } catch (e) {
+      console.warn('[GameEngine] rebirth: 无法保存宗门/弟子快照', e);
+    }
+
     this.state = SaveSystem.createDefault();
     this.state.dao = dao;
     this.state.rebirths = n;
+    if (keptSect) this.state.sect = keptSect;
+    this.state.disciples = keptDisciples;
     this._passive = { dew: 0, ore: 0 };
 
     this._emit('rebirth', { gain, dao, times: n });
@@ -623,6 +638,14 @@ const GameEngine = {
     this.state.herb = Math.min(GameConfig.resourceHardCap, (this.state.herb || 0) + g.herb);
     this.state.ore = Math.min(GameConfig.resourceHardCap, (this.state.ore || 0) + g.ore);
     this.state.dew = Math.min(GameConfig.resourceHardCap, (this.state.dew || 0) + g.dew);
+    // 弟子在离开期间照常产出贡献与灵石
+    if (g.discipleStone) {
+      this.state.stone = Math.min(GameConfig.stoneHardCap, (this.state.stone || 0) + g.discipleStone);
+    }
+    if (g.contrib && typeof SectSystem !== 'undefined' && SectSystem.data.joined) {
+      SectSystem.data.contrib += g.contrib;
+      SectSystem._refreshRank();
+    }
 
     const summary = {
       seconds,
@@ -630,6 +653,8 @@ const GameEngine = {
       herb: g.herb,
       ore: g.ore,
       dew: g.dew,
+      contrib: g.contrib || 0,
+      discipleStone: g.discipleStone || 0,
       capped: gapSeconds > capSeconds,
     };
     this._emit('awayGains', summary);

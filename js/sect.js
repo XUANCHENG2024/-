@@ -198,12 +198,15 @@ const SectSystem = {
   _refreshRank() {
     const d = this.data;
     const grade = this.grade;
+    let computed = 0;
     for (let i = this.cfg.positions.length - 1; i >= 0; i--) {
       const p = this.cfg.positions[i];
-      if (d.contrib >= p.contrib && grade >= p.grade) { d.rank = i; return d.rank; }
+      if (d.contrib >= p.contrib && grade >= p.grade) { computed = i; break; }
     }
-    d.rank = 0;
-    return 0;
+    // 职位只升不降：声望或贡献因异常被清零时，不应把玩家打回杂役。
+    // 文档写的是"职位不设降级"，这里必须真的守住。
+    if (computed > d.rank) d.rank = computed;
+    return d.rank;
   },
 
   /** 贡献兑换秘境令 */

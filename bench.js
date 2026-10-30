@@ -24,7 +24,7 @@ const document = W.document;
 W.AudioContext = undefined;
 W.navigator.vibrate = () => {};
 
-for (const s of ['config.js', 'save.js', 'engine.js', 'features.js', 'systems.js', 'ui.js']) {
+for (const s of ['config.js', 'save.js', 'engine.js', 'features.js', 'systems.js', 'sect.js', 'disciples.js', 'ui.js']) {
   const el = document.createElement('script');
   el.textContent = fs.readFileSync(path.join(dir, 'js', s), 'utf8');
   document.body.appendChild(el);

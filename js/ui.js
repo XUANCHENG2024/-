@@ -847,13 +847,52 @@ const UI = {
 
         // 入轮回
         case 'rebirth': {
+          // 轮回不可逆：必须先确认，且不能带着进行中的秘境一起重置
+          if (typeof DelveSystem !== 'undefined' && DelveSystem.active) {
+            this.showToast('秘境未撤，先收手再入轮回');
+            SoundFX.play('deny');
+            break;
+          }
+          const gainPreview = GameEngine.rebirthDaoGain;
+          const keptDisciples2 = (typeof DiscipleSystem !== 'undefined') ? DiscipleSystem.count : 0;
+          const keptRank2 = (typeof SectSystem !== 'undefined') ? SectSystem.rankDef.name : '';
+          const keptList = [];
+          if (keptRank2) keptList.push(`职位「${keptRank2}」`);
+          if (keptDisciples2 > 0) keptList.push(`弟子 ${keptDisciples2} 名`);
+
+          this.showModal('入轮回？', `
+            <p class="delve-sum-lead">
+              境界与小阶归零，灵田作物、炼丹队列、材料与灵石一并散去。<br>
+              换取 <b>道行 +${gainPreview}</b>（每点 +1% 修炼速率 / +0.5% 灵草产出）。
+            </p>
+            <p class="delve-sum-lead">
+              ${keptList.length ? `${keptList.join('、')}、功法与宠物不随轮回散去。` : '功法与宠物不随轮回散去。'}
+            </p>
+            <button class="btn-action rebirth-btn" data-action="rebirth-confirm" style="width:100%">确认入轮回</button>
+          `);
+          break;
+        }
+        case 'rebirth-confirm': {
+          const keptDisciples = (typeof DiscipleSystem !== 'undefined') ? DiscipleSystem.count : 0;
+          const keptRank = (typeof SectSystem !== 'undefined') ? SectSystem.rankDef.name : '';
           const r = GameEngine.rebirth();
+          this.hideModal();
           if (r.ok) {
             this._hudCache = {};
+            this._cvCache = {};
+            this._sectCache = {};
             this._needsFullRebuild = true;
             this.showToast(`轮回成功，道行 +${r.gain}`);
             SoundFX.play('breakthrough'); Haptic.heavy();
             if (typeof CharacterVoice !== 'undefined') CharacterVoice.say('rebirth', 400);
+            const kept = [];
+            if (keptRank) kept.push(`职位「${keptRank}」`);
+            if (keptDisciples > 0) kept.push(`弟子 ${keptDisciples} 名`);
+            if (kept.length) {
+              this.showModal('入轮回', `
+                <p class="delve-sum-lead">境界归零，道行 +${r.gain}。</p>
+                <p class="delve-sum-lead">宗门与功法不随轮回散去：${kept.join('、')} 皆在。</p>`);
+            }
           } else {
             this.showToast(r.msg);
           }
@@ -1166,6 +1205,12 @@ const UI = {
     });
   },
 
+  /** 关闭弹窗（统一的出口，避免各处直接改 hidden） */
+  hideModal() {
+    const el = document.getElementById('modal-overlay');
+    if (el) el.hidden = true;
+  },
+
   showModal(title, bodyHtml) {
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = bodyHtml;
@@ -1212,13 +1257,16 @@ const UI = {
       <div class="gain-row"><span>灵草</span><b>+${gains.herb}</b></div>
       <div class="gain-row"><span>矿石</span><b>+${gains.ore}</b></div>
       <div class="gain-row"><span>凝露</span><b>+${gains.dew}</b></div>
+      ${gains.discipleStone ? `<div class="gain-row"><span>弟子供奉灵石</span><b>+${gains.discipleStone}</b></div>` : ''}
+      ${gains.contrib ? `<div class="gain-row"><span>弟子贡献</span><b>+${gains.contrib}</b></div>` : ''}
       ${capNote}
     `;
     document.getElementById('offline-overlay').hidden = false;
     this._pendingOfflineGains = gains;
   },
 
-  _claimOfflineGains() {    const gains = this._pendingOfflineGains;
+  _claimOfflineGains() {
+    const gains = this._pendingOfflineGains;
     if (!gains) return;
 
     const s = GameEngine.state;
@@ -1227,10 +1275,18 @@ const UI = {
     s.herb = Math.min(s.herb + gains.herb, GameConfig.resourceHardCap);
     s.ore = Math.min(s.ore + gains.ore, GameConfig.resourceHardCap);
     s.dew = Math.min(s.dew + gains.dew, GameConfig.resourceHardCap);
+    // 弟子产出
+    if (gains.discipleStone) {
+      s.stone = Math.min(GameConfig.stoneHardCap, s.stone + gains.discipleStone);
+    }
+    if (gains.contrib && typeof SectSystem !== 'undefined' && SectSystem.data.joined) {
+      SectSystem.data.contrib += gains.contrib;
+      SectSystem._refreshRank();
+    }
 
     this._pendingOfflineGains = null;
     this.showToast('离线收益已领取');
-    this.refreshAll();
+    this.refreshAll(true);
   },
 
   // === 突破特效 ===
@@ -1617,6 +1673,11 @@ UI.refreshAll = function(force) {
 UI.refreshSect = function (force) {
   const panel = document.getElementById('panel-sect');
   if (!panel) return;
+  // 防御：宗门模块未加载（脚本 404 / 顺序错）时不应拖垮整个刷新链。
+  // 之前 refreshSect 无保护地引用 SectSystem，一旦缺失，refreshAll 整体抛错，
+  // 连修炼面板都不再更新 —— 单点故障放大成全站故障。
+  if (typeof SectSystem === 'undefined' || typeof DelveSystem === 'undefined') return;
+  if (typeof DiscipleSystem === 'undefined') return;
 
   const d = SectSystem.data;
   const cache = this._sectCache || (this._sectCache = {});

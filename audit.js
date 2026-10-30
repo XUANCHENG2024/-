@@ -48,6 +48,7 @@ const TechniqueSystem = G('TechniqueSystem');
 const WeatherSystem = G('WeatherSystem');
 const SectSystem = G('SectSystem');
 const DelveSystem = G('DelveSystem');
+const DiscipleSystem = G('DiscipleSystem');
 const calcQ = G('calcQ');
 const getStatThresholds = G('getStatThresholds');
 const calcRate = G('calcRate');
@@ -814,4 +815,126 @@ log('\n=== M · 宗门阶层与收徒 ===');
     .reduce((a, p) => a + p.slots, 0);
   R.slotGateOk = earlySlots === 0 && pos[GameConfig.disciple.unlockRank].slots > 0;
   log(`  收徒门槛：真传之前名额合计 ${earlySlots} → ${R.slotGateOk ? '符合预期' : '异常'}`);
+}
+
+// ============================================================
+// N. 跨系统一致性（轮回 / 离线 / 每日重置）
+// ============================================================
+log('\n=== N · 跨系统一致性 ===');
+{
+  // N1 轮回保留矩阵：文档承诺保留的东西，轮回后必须还在
+  const st = SaveSystem.createDefault();
+  st.realm = 6; st.level = 9;
+  st.stone = 50000; st.spiritSense = 99; st.mana = 999; st.health = 999;
+  st.cultivation = calcQ(6, 9, 1.0);
+  st.totalCultivation = 70000;
+  GameEngine.state = st;
+  SectSystem.ensure(); DiscipleSystem.ensure();
+  SectSystem.join();
+  SectSystem.data.contrib = 4000;
+  SectSystem.data.prestige = 2500;
+  SectSystem._refreshRank();
+  DiscipleSystem.recruit();
+
+  const before = {
+    joined: SectSystem.data.joined,
+    grade: SectSystem.grade,
+    rank: SectSystem.data.rank,
+    contrib: SectSystem.data.contrib,
+    prestige: SectSystem.data.prestige,
+    disciples: DiscipleSystem.count,
+  };
+
+  GameEngine.rebirth();
+
+  const after = {
+    joined: SectSystem.data.joined,
+    grade: SectSystem.grade,
+    rank: SectSystem.data.rank,
+    contrib: SectSystem.data.contrib,
+    prestige: SectSystem.data.prestige,
+    disciples: DiscipleSystem.count,
+  };
+
+  const lost = [];
+  if (before.joined && !after.joined) lost.push('宗门身份');
+  if (before.rank > after.rank) lost.push(`职位 ${before.rank}→${after.rank}`);
+  if (before.prestige > 0 && after.prestige === 0) lost.push('宗门声望');
+  if (before.contrib > 0 && after.contrib === 0) lost.push('宗门贡献');
+  if (before.disciples > 0 && after.disciples === 0) lost.push('弟子');
+
+  R.rebirthKeeps = { before, after, lost };
+  R.rebirthKeepsAll = lost.length === 0;
+  log(`  轮回保留：${lost.length === 0 ? '完整' : '丢失 → ' + lost.join('、')}`);
+  log(`    轮前 等级${before.grade}/职位${before.rank}/声望${before.prestige}/弟子${before.disciples}`);
+  log(`    轮后 等级${after.grade}/职位${after.rank}/声望${after.prestige}/弟子${after.disciples}`);
+
+  // N2 离线收益来源覆盖：逐个来源比对"在线有 / 离线有"
+  const st2 = SaveSystem.createDefault();
+  st2.realm = 3; st2.level = 1;
+  st2.stone = 5000;
+  st2.unlockedPlots = 8;
+  st2.lastSaveTicks = Date.now() - 3600 * 1000;
+  GameEngine.state = st2;
+  SectSystem.ensure(); DiscipleSystem.ensure();
+  SectSystem.join();
+  SectSystem.data.contrib = 2000;
+  SectSystem.data.prestige = 999;
+  SectSystem._refreshRank();
+  DiscipleSystem.recruit();
+  const d = DiscipleSystem.list[0];
+  d.aptitude = 5; d.loyalty = 80;
+
+  // 在线 1 小时的贡献产出
+  const contrib0 = SectSystem.data.contrib;
+  DiscipleSystem.tick(3600);
+  const onlineContrib = SectSystem.data.contrib - contrib0;
+
+  // 离线 1 小时的结算内容
+  const st3 = SaveSystem.createDefault();
+  st3.realm = 3; st3.level = 1; st3.unlockedPlots = 8;
+  st3.lastSaveTicks = Date.now() - 3600 * 1000;
+  st3.sect.joined = true;
+  st3.sect.rank = 3;
+  st3.sect.prestige = 999;
+  st3.disciples = [JSON.parse(JSON.stringify(d))];
+  const off = SaveSystem.calculateOfflineGains(st3, Date.now());
+
+  R.offlineCoverage = {
+    cultivation: true,
+    herb: off && off.herb > 0,
+    ore: off && off.ore > 0,
+    dew: off && off.dew > 0,
+    stoneFromDisciples: !!(off && off.discipleStone > 0),
+    contribFromDisciples: !!(off && off.contrib > 0),
+  };
+  const missing = Object.entries(R.offlineCoverage).filter(([, v]) => !v).map(([k]) => k);
+  R.offlineMissing = missing;
+  log(`  离线收益覆盖：${missing.length === 0 ? '完整' : '缺 → ' + missing.join('、')}`);
+  log(`    在线 1 小时弟子产出贡献 ${onlineContrib}，离线结算中该项为 ${R.offlineCoverage.contribFromDisciples ? '有' : '无'}`);
+
+  // N3 每日重置：跨天后令牌与贡献额度应清零
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = 2;          // join 需要筑基
+  SectSystem.ensure(); SectSystem.join();
+  SectSystem.data.tokenDate = '2000-01-01';
+  SectSystem.data.contribDate = '2000-01-01';
+  SectSystem.data.contribToday = 300;
+  R.dailyResetOk = SectSystem.canClaimTokensToday() === true;
+  log(`  跨天重置：令牌可再领=${SectSystem.canClaimTokensToday() ? '是' : '否'}，贡献额度可再刷=${(function () {
+    SectSystem.offer(1);
+    return SectSystem.data.contribToday < 310;
+  })() ? '是' : '否'}`);
+
+  // N4 职位与宗门等级的一致性：声望被清后是否会掉级
+  GameEngine.state = SaveSystem.createDefault();
+  SectSystem.ensure(); SectSystem.join();
+  SectSystem.data.contrib = 4000;
+  SectSystem.data.prestige = 2500;
+  SectSystem._refreshRank();
+  const highRank = SectSystem.data.rank;
+  SectSystem.data.prestige = 0;
+  SectSystem._refreshRank();
+  R.rankDriftsWithPrestige = SectSystem.data.rank < highRank;
+  log(`  声望归零后职位：${highRank} → ${SectSystem.data.rank}${R.rankDriftsWithPrestige ? '（会掉级）' : '（不掉级）'}`);
 }

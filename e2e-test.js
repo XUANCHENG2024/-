@@ -501,6 +501,55 @@ UI.refreshAll(true);
 const rec2 = document.getElementById('btn-recruit');
 check('名额满后「收徒」置灰', rec2.classList.contains('is-off'), `count=${DiscipleSystem.count}`);
 
+// ===== 12. 轮回二次确认（不可逆操作） =====
+console.log('\n=== 12. 轮回确认 ===');
+
+GameEngine.state = SaveSystem.createDefault();
+GameEngine.state.realm = 6;
+GameEngine.state.level = 9;
+GameEngine.state.stone = 50000;
+GameEngine.state.spiritSense = 99;
+GameEngine.state.mana = 999;
+GameEngine.state.health = 999;
+GameEngine.state.cultivation = G('calcQ')(6, 9, 1.0);
+GameEngine.state.totalCultivation = 70000;
+UI._sectCache = {};
+UI.showTab('cultivation');
+UI.refreshAll(true);
+
+const rebBtn = document.getElementById('btn-rebirth');
+check('渡劫圆满后出现「入轮回」按钮', !!rebBtn && !rebBtn.hidden);
+
+// 秘境进行中：应被拒绝
+SectSystem.ensure();
+SectSystem.join();
+const savedTokens = SectSystem.data.tokens;
+SectSystem.data.tokens = 5;
+DelveSystem.enter(1);
+check('秘境已进入', DelveSystem.active === true);
+
+clickEl(rebBtn);
+check('秘境未撤时点轮回 → 不重置境界',
+  GameEngine.state.realm === 6, `realm=${GameEngine.state.realm}`);
+
+// 撤出秘境后再点：应弹确认框，而不是直接重置
+DelveSystem.withdraw();
+UI._sectCache = {};
+UI.refreshAll(true);
+const rebBtn2 = document.getElementById('btn-rebirth');
+clickEl(rebBtn2);
+const modal = document.getElementById('modal-overlay');
+check('点轮回 → 弹出确认框', modal.hidden === false);
+check('确认框里有「确认入轮回」按钮',
+  !!document.querySelector('[data-action="rebirth-confirm"]'));
+check('未确认前境界不变', GameEngine.state.realm === 6, `realm=${GameEngine.state.realm}`);
+
+// 确认
+clickEl(document.querySelector('[data-action="rebirth-confirm"]'));
+check('确认后境界归零', GameEngine.state.realm === 1, `realm=${GameEngine.state.realm}`);
+check('确认后获得道行', GameEngine.state.dao > 0, `dao=${GameEngine.state.dao}`);
+SectSystem.data.tokens = savedTokens;
+
 // ===== 汇总 =====
 console.log('\n' + '='.repeat(55));
 console.log(`E2E 报告：${pass}/${pass + fail} 通过，${fail} 失败`);

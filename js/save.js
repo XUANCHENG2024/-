@@ -371,11 +371,28 @@ const SaveSystem = {
       * (1 + (typeof TechniqueSystem !== 'undefined' ? TechniqueSystem.herbBonus : 0))
       * (1 + (gameState.dao || 0) * GameConfig.rebirth.daoHerbPerPoint);
 
+    // 弟子产出也必须在离线时结算。
+    // 灵田、矿石、凝露都会离线条目里结算，唯独弟子不结算，
+    // 相当于"养徒弟只在开着的电脑上才有效"，与放置游戏的核心承诺相悖。
+    // 注意：离线期间不计算忠诚流失，避免玩家不在时弟子叛出。
+    let discipleContrib = 0;
+    let discipleStone = 0;
+    if (typeof DiscipleSystem !== 'undefined' && Array.isArray(gameState.disciples)) {
+      for (const d of gameState.disciples) {
+        if (!d) continue;
+        const y = DiscipleSystem.yieldPerMin(d);
+        discipleContrib += y.contrib * seconds / 60;
+        discipleStone += y.stone * seconds / 60;
+      }
+    }
+
     return {
       cultivation: rate * seconds,
       herb: Math.floor(GameConfig.herbPerHourPerPlot * plots * herbMult * seconds / 3600),
       ore: Math.floor(GameConfig.orePerHour * seconds / 3600),
       dew: Math.floor(GameConfig.dewPerHour * seconds / 3600),
+      contrib: Math.floor(discipleContrib),
+      discipleStone: Math.floor(discipleStone),
       rate,
     };
   },
@@ -400,6 +417,8 @@ const SaveSystem = {
       herb: g.herb,
       ore: g.ore,
       dew: g.dew,
+      contrib: g.contrib,
+      discipleStone: g.discipleStone,
       capped: rawElapsed > capSeconds,
       capHours: +(capSeconds / 3600).toFixed(1),
     };
