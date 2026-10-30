@@ -31,7 +31,7 @@ const document = W.document;
 W.AudioContext = undefined;
 W.navigator.vibrate = () => {};
 
-for (const s of ['config.js', 'save.js', 'engine.js', 'features.js', 'systems.js', 'sect.js', 'ui.js']) {
+for (const s of ['config.js', 'save.js', 'engine.js', 'features.js', 'systems.js', 'sect.js', 'disciples.js', 'ui.js']) {
   const el = document.createElement('script');
   el.textContent = fs.readFileSync(path.join(__dirname, 'js', s), 'utf8');
   document.body.appendChild(el);
@@ -746,4 +746,72 @@ log('\n═══ L · 宗门与秘境 ═══');
   const fixed = SaveSystem._ensureShape(dirty);
   R.delveSaveSanitized = !fixed.delve.active;
   log(`  存档自愈（active 但无门 → 置为未开始）：${R.delveSaveSanitized ? '有' : '无'}`);
+}
+
+// ============================================================
+// M. 宗门阶层体系（MECH-021 扩展 / MECH-023）
+// ============================================================
+log('\n=== M · 宗门阶层与收徒 ===');
+{
+  const pos = GameConfig.sect.positions;
+  const grades = GameConfig.sect.grades;
+
+  // M1 职位表必须单调：贡献递增，权限不倒退
+  const bad = [];
+  for (let i = 1; i < pos.length; i++) {
+    const a = pos[i - 1], b = pos[i];
+    if (b.contrib <= a.contrib) bad.push(`${b.name} 贡献未递增`);
+    if (b.tier < a.tier) bad.push(`${b.name} 秘境层级倒退`);
+    if (b.tokens < a.tokens) bad.push(`${b.name} 日令减少`);
+    if (b.slots < a.slots) bad.push(`${b.name} 收徒名额减少`);
+    if (b.offeringMult > a.offeringMult) bad.push(`${b.name} 供奉变贵`);
+    if (b.grade < a.grade) bad.push(`${b.name} 宗门等级要求倒退`);
+  }
+  R.positionMonotonic = bad.length === 0;
+  log(`  职位表单调性：${bad.length ? '异常 → ' + bad.join('；') : '正常（贡献递增、权限不倒退）'}`);
+
+  // M2 宗门等级门槛是否可达：算每天能拿多少声望
+  const task = GameConfig.sect.sectTask;
+  const dailyPrestige = task.prestige + Math.floor(GameConfig.sect.dailyContribCap / 2);
+  R.dailyPrestige = dailyPrestige;
+  const needForGrade4 = grades[3].prestige;
+  R.daysToGrade4 = Math.ceil(needForGrade4 / dailyPrestige);
+  log(`  每日声望上限约 ${dailyPrestige}（月例 ${task.prestige} + 供奉折算 ${Math.floor(GameConfig.sect.dailyContribCap / 2)}）`);
+  log(`  升到「${grades[3].name}」需 ${needForGrade4} 声望 → 约 ${R.daysToGrade4} 天（不含秘境与出师）`);
+
+  // M3 收徒经济：养一名弟子到出师的总投入 vs 总回报
+  const dc = GameConfig.disciple;
+  const apt = 3;                                    // 取中品作代表
+  const naturalPerMin = dc.growthBase * apt;
+  const minutesNatural = dc.graduateCultivation / naturalPerMin;
+  // 传功次数：0->100 按每次 +25，亲传后从 60 再推
+  const impartsFirst = Math.ceil(dc.graduateCultivation / dc.impartGain);
+  const costPerImpart = 0.12;                       // 按当前层上限的比例，随境界折算
+  R.disciple = {
+    naturalMinutes: Math.round(minutesNatural),
+    imparts: impartsFirst,
+    recruitStone: dc.recruitStone,
+    graduateContrib: dc.graduateContrib,
+    graduatePrestige: dc.graduatePrestige,
+  };
+  log(`  弟子自然成长到出师约需 ${Math.round(minutesNatural)} 分钟（资质中品，不吃传功）`);
+  log(`  若全靠传功：约 ${impartsFirst} 次，合计消耗自身修为约 ${(impartsFirst * costPerImpart * 100).toFixed(0)}% 层上限`);
+
+  // 弟子产出：每天能给多少贡献
+  const yieldContribPerMin = dc.yieldContribPerMin * apt;
+  R.discipleYieldPerDay = Math.round(yieldContribPerMin * 60 * 24);
+  log(`  单个弟子满勤产出约 ${R.discipleYieldPerDay} 贡献/天（资质中品、无阶段加成）`);
+
+  // M4 忠诚维护成本
+  const decayPerHour = dc.loyaltyDecayPerMin * 60;
+  const advisePerHour = dc.adviseLoyalty;
+  const stonePerHour = (decayPerHour / advisePerHour) * dc.adviseStone;
+  R.loyaltyUpkeepStonePerHour = +stonePerHour.toFixed(1);
+  log(`  忠诚每小时流失 ${decayPerHour.toFixed(1)} → 维持忠诚约需 ${stonePerHour.toFixed(1)} 灵石/小时`);
+
+  // M5 收徒名额与职位是否匹配（真传之前 slots 必须为 0）
+  const earlySlots = pos.filter(p => p.contrib < pos[GameConfig.disciple.unlockRank].contrib)
+    .reduce((a, p) => a + p.slots, 0);
+  R.slotGateOk = earlySlots === 0 && pos[GameConfig.disciple.unlockRank].slots > 0;
+  log(`  收徒门槛：真传之前名额合计 ${earlySlots} → ${R.slotGateOk ? '符合预期' : '异常'}`);
 }

@@ -29,7 +29,7 @@ W.navigator.vibrate = () => {};
 W.matchMedia = W.matchMedia || (() => ({ matches: false, addListener() {}, removeListener() {} }));
 
 // 逐个注入脚本（作为 <script> 执行，共享全局词法环境）
-const scripts = ['config.js', 'save.js', 'engine.js', 'features.js', 'systems.js', 'sect.js', 'ui.js'];
+const scripts = ['config.js', 'save.js', 'engine.js', 'features.js', 'systems.js', 'sect.js', 'disciples.js', 'ui.js'];
 for (const s of scripts) {
   const code = fs.readFileSync(path.join(__dirname, 'js', s), 'utf8');
   const el = document.createElement('script');
@@ -423,6 +423,83 @@ UI._sectCache = {};
 UI.refreshAll(true);
 const locked = document.querySelector('.delve-entry.is-locked');
 check('职位不足的层级显示为锁定', !!locked);
+
+// ===== 11. 宗门等级 · 职位 · NPC · 收徒（真实点击） =====
+console.log('\n=== 11. 宗门等级与收徒 ===');
+
+const DiscipleSystem = G('DiscipleSystem');
+
+GameEngine.state = SaveSystem.createDefault();
+GameEngine.state.realm = 4;
+GameEngine.state.level = 1;
+GameEngine.state.stone = 30000;
+GameEngine.state.spiritSense = 35;
+GameEngine.state.mana = 300;
+GameEngine.state.health = 300;
+SectSystem.ensure();
+DiscipleSystem.ensure();
+SectSystem.join();
+SectSystem.data.contrib = 2000;
+SectSystem.data.prestige = 4000;
+SectSystem._refreshRank();
+UI._sectCache = {};
+UI.showTab('sect');
+UI.refreshAll(true);
+
+check('宗门面板渲染出宗门等级', !!document.getElementById('sect-grade-name'));
+check('宗门面板渲染出职责与权限', !!document.getElementById('sect-duty'));
+check('渲染出 NPC 职位行', document.querySelectorAll('.npc-row').length >= 4,
+  `实际 ${document.querySelectorAll('.npc-row').length}`);
+
+// 掌门月例
+const taskBtn = document.querySelector('[data-action="sect-task"]');
+check('掌门行可点击', !!taskBtn);
+const contribBefore = SectSystem.data.contrib;
+clickEl(taskBtn);
+check('点掌门 → 领到月例', SectSystem.data.contrib > contribBefore);
+
+// 教习磨资质
+DiscipleSystem.recruit();
+UI._sectCache = {};
+UI.refreshAll(true);
+const trainBtn = document.querySelector('[data-action="sect-train"]');
+check('教习行可点击', !!trainBtn);
+
+// 收徒按钮
+const recBtn = document.getElementById('btn-recruit');
+check('渲染出「收徒」按钮', !!recBtn);
+check('收徒按钮带 data-action', recBtn?.dataset.action === 'disciple-recruit');
+
+// 弟子卡与操作
+UI._sectCache = {};
+UI.refreshAll(true);
+const adviseBtn = document.querySelector('[data-action="disciple-advise"]');
+const impartBtn = document.querySelector('[data-action="disciple-impart"]');
+check('弟子卡渲染出「指点」', !!adviseBtn);
+check('弟子卡渲染出「传功」', !!impartBtn);
+
+const d0 = DiscipleSystem.list[0];
+d0.loyalty = 30;
+UI._sectCache = {};
+UI.refreshAll(true);
+clickEl(document.querySelector('[data-action="disciple-advise"]'));
+check('点「指点」→ 忠诚提升', DiscipleSystem.list[0].loyalty > 30,
+  `loyalty=${DiscipleSystem.list[0].loyalty}`);
+
+// 传功（先给足自身修为）
+GameEngine.state.cultivation = 99999;   // 足够支付传功消耗
+UI._sectCache = {};
+UI.refreshAll(true);
+clickEl(document.querySelector('[data-action="disciple-impart"]'));
+check('点「传功」→ 弟子修为提升', DiscipleSystem.list[0].cultivation > 0,
+  `cult=${DiscipleSystem.list[0].cultivation}`);
+
+// 名额满后收徒按钮置灰
+DiscipleSystem.recruit();   // 真传弟子 1 个名额 → 已满
+UI._sectCache = {};
+UI.refreshAll(true);
+const rec2 = document.getElementById('btn-recruit');
+check('名额满后「收徒」置灰', rec2.classList.contains('is-off'), `count=${DiscipleSystem.count}`);
 
 // ===== 汇总 =====
 console.log('\n' + '='.repeat(55));

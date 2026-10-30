@@ -84,22 +84,111 @@ const GameConfig = {
   },
 
   // === 宗门（MECH-021）===
-  // 定位：长线 meta 层。提供秘境门票、职位（决定可入秘境层级）、
-  // 以及一个可持续的灵石消耗口（供奉），解决后期灵石无处可花的问题。
+  // 定位：长线 meta 层。三层结构——
+  //   宗门等级（全宗声望决定）→ 决定职位上限与山门气象
+  //   职位层级（个人贡献决定，受宗门等级卡口）→ 决定权限：秘境准入 / 日令 / 收徒名额
+  //   NPC 职位（掌门、传功长老、教习、执事）→ 各管一摊具体职能
+  // 同时它仍是灵石的长效消耗口（供奉）。
   sect: {
     joinRealm: 2,               // 筑基方可入宗
-    ranks: [
-      { name: '外门弟子', contrib: 0,    tier: 1 },
-      { name: '内门弟子', contrib: 200,  tier: 2 },
-      { name: '真传弟子', contrib: 600,  tier: 3 },
-      { name: '执事长老', contrib: 1500, tier: 4 },
+    schema: 2,                  // 职位体系版本，用于旧档迁移
+
+    // 宗门等级：由全宗「声望」推动。声望来自供奉、秘境、弟子出师、宗门任务。
+    grades: [
+      { id: 1, name: '末流小宗', prestige: 0,     desc: '山门三间，弟子十余人' },
+      { id: 2, name: '三流宗门', prestige: 300,   desc: '有护山大阵，可开秘境' },
+      { id: 3, name: '二流宗门', prestige: 900,   desc: '长老坐镇，收徒成制' },
+      { id: 4, name: '一流宗门', prestige: 2000,  desc: '与大宗往来，秘境丰厚' },
+      { id: 5, name: '顶级圣地', prestige: 4000,  desc: '天下知名，弟子出师即为一方人物' },
     ],
-    offeringStone: 100,         // 供奉：投入灵石换贡献
+
+    // 职位层级：参照修仙小说门规。contrib = 个人累计贡献门槛；
+    // grade = 所需宗门等级（个人再强，宗门不够格也坐不上这个位子）
+    positions: [
+      { id: 0, name: '杂役弟子', contrib: 0,     grade: 1, tier: 1, tokens: 1, slots: 0, offeringMult: 1.00,
+        duty: '洒扫山门、照看灵田，无权无俸', right: '秘境一层' },
+      { id: 1, name: '外门弟子', contrib: 100,   grade: 1, tier: 1, tokens: 2, slots: 0, offeringMult: 1.00,
+        duty: '完成宗门任务换取修行资源', right: '秘境一层 · 日令二枚' },
+      { id: 2, name: '内门弟子', contrib: 300,   grade: 1, tier: 2, tokens: 3, slots: 0, offeringMult: 1.00,
+        duty: '入内门听讲，可借阅低阶功法', right: '秘境二层 · 日令三枚' },
+      { id: 3, name: '真传弟子', contrib: 800,   grade: 2, tier: 3, tokens: 4, slots: 1, offeringMult: 0.95,
+        duty: '承长老衣钵，代师授业', right: '秘境三层 · 可收徒一名' },
+      { id: 4, name: '执事', contrib: 3000,      grade: 2, tier: 3, tokens: 5, slots: 2, offeringMult: 0.90,
+        duty: '掌宗门庶务，经手供奉与令牌', right: '秘境三层 · 可收徒二名 · 供奉九折' },
+      { id: 5, name: '长老', contrib: 6000,      grade: 3, tier: 4, tokens: 6, slots: 3, offeringMult: 0.85,
+        duty: '坐镇一堂，可开秘境予门下弟子', right: '秘境四层 · 可收徒三名 · 供奉八五折' },
+      { id: 6, name: '太上长老', contrib: 7000,  grade: 4, tier: 4, tokens: 8, slots: 5, offeringMult: 0.75,
+        duty: '不理庶务，唯宗门存亡之际出手', right: '秘境四层 · 可收徒五名 · 供奉七五折' },
+    ],
+
+    // NPC 职位：各管一摊，玩家可直接与其交互
+    npcPosts: [
+      { id: 'master',  name: '掌门',     npc: '玄诚子', title: '掌门',     action: 'sect-task',
+        line: '宗门每月有例，做完来领赏。' },
+      { id: 'elder',   name: '传功长老', npc: '苏玉衡', title: '传功长老', action: 'sect-scripture',
+        line: '功法在此，贡献够了便传你。' },
+      { id: 'teacher', name: '教习',     npc: '白十一', title: '教习',     action: 'sect-train',
+        line: '徒弟资质不行，我可以磨。灵石你出。' },
+      { id: 'steward', name: '执事',     npc: '陈敬',   title: '执事',     action: 'sect-offer',
+        line: '供奉、令牌，都在我这儿办。' },
+    ],
+
+    offeringStone: 100,         // 供奉：投入灵石换贡献（实际消耗按职位打折）
     offeringContrib: 10,
     dailyContribCap: 300,       // 每日贡献上限，防止无限刷
-    tokenDaily: 3,              // 每日可领秘境令
     tokenCostContrib: 40,       // 额外兑换 1 张秘境令
     healCostStone: 120,         // 疗伤消耗
+
+    // 掌门处「宗门月例」：每日可领一次
+    sectTask: { contrib: 40, prestige: 30, cooldownHours: 24 },
+
+    // 传功长老处可换的宗门功法（并入 TechniqueSystem）
+    scriptures: [
+      { id: 'sect_qingyun', name: '青云剑典', cost: 900,  contrib: 400, grade: 2, desc: '宗门根本剑典，练剑收益提升' },
+      { id: 'sect_zhenshan', name: '镇山诀',  cost: 1800, contrib: 900, grade: 3, desc: '镇山之学，修为积累与体魄俱增' },
+    ],
+
+    // 教习磨资质：每名弟子每日一次
+    train: { stone: 150, aptitudeUp: 1, loyaltyUp: 8 },
+  },
+
+  // === 收徒（MECH-023）===
+  // 定位：把"个人变强"扩展成"带一脉"。弟子是持续产出与声望来源，
+  // 但需要盯着——忠诚会自然流失，长期不管会叛出师门。
+  disciple: {
+    unlockRank: 3,              // 真传弟子起可收徒
+    recruitStone: 300,
+    recruitContrib: 20,
+
+    // 弟子成长：修为按资质累积，满 100 可传功进阶
+    growthBase: 0.06,           // 每分钟基础修为增长（再乘资质）
+    loyaltyDecayPerMin: 0.1,    // 忠诚自然流失
+    loyaltyWarning: 20,         // 低于此值有叛出风险
+    betrayChancePerMin: 0.004,  // 忠诚过低时每分钟叛出概率
+
+    // 指点：花灵石提忠诚，少量加修为
+    adviseStone: 50,
+    adviseLoyalty: 15,
+    adviseCultivation: 6,
+
+    // 传功：以自身修为喂弟子，大幅推进并加忠诚
+    impartCultivationPct: 0.12, // 消耗当前层上限的 12%
+    impartGain: 25,             // 弟子修为 +25
+    impartLoyalty: 20,
+
+    // 产出：按资质与阶段折算贡献 / 灵石（每分钟）
+    yieldContribPerMin: 0.02,
+    yieldStonePerMin: 0.12,
+
+    // 出师
+    graduateCultivation: 100,
+    graduatePrestige: 50,
+    graduateContrib: 120,
+
+    // 姓名池（姓 + 名），随机组合，纯本地
+    surnames: ['林', '苏', '顾', '陆', '谢', '裴', '沈', '崔', '薛', '阮'],
+    givenNames: ['稚川', '青梧', '怀瑾', '照野', '知白', '晏如', '清晏', '望舒', '寒山', '拾遗', '归尘', '砚秋'],
+    aptitudeNames: ['下品', '中品', '上品', '极品', '天灵根'],
   },
 
   // === 秘境（MECH-022）===

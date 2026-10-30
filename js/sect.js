@@ -32,18 +32,43 @@ const SectSystem = {
         joined: false,
         contrib: 0,
         rank: 0,
+        prestige: 0,
         tokens: 0,
         tokenDate: '',
         contribDate: '',
         contribToday: 0,
         offeringCount: 0,
+        schema: GameConfig.sect.schema,
+        taskDate: '',
+        scriptures: {},
+        graduated: [],
       };
     }
     const d = s.sect;
     if (typeof d.contrib !== 'number') d.contrib = 0;
     if (typeof d.rank !== 'number') d.rank = 0;
     if (typeof d.tokens !== 'number') d.tokens = 0;
+    if (typeof d.prestige !== 'number') d.prestige = 0;
     d.joined = !!d.joined;
+
+    // 旧档迁移：v1 只有 4 级职位（外门/内门/真传/执事），
+    // 新版是 7 级且多了「杂役弟子」垫底，索引整体 +1。
+    // 不迁移会让老玩家从「外门」直接掉成「杂役」。
+    if (d.schema !== GameConfig.sect.schema) {
+      if (typeof d.schema !== 'number') {
+        d.rank = Math.min(d.rank + 1, GameConfig.sect.positions.length - 1);
+        // 旧档已解锁的秘境层级不能因为改版而丢失，用声望兜住
+        const maxTier = GameConfig.sect.positions[d.rank].tier;
+        const needGrade = GameConfig.sect.positions[d.rank].grade;
+        d.prestige = Math.max(d.prestige, GameConfig.sect.grades[needGrade - 1].prestige);
+        d.tokens = typeof d.tokens === 'number' ? d.tokens : 0;
+      }
+      d.schema = GameConfig.sect.schema;
+    }
+
+    if (!d.scriptures || typeof d.scriptures !== 'object') d.scriptures = {};
+    if (!Array.isArray(d.graduated)) d.graduated = [];
+    if (typeof d.taskDate !== 'string') d.taskDate = '';
     return d;
   },
 
@@ -54,12 +79,49 @@ const SectSystem = {
   /** 当前职位定义 */
   get rankDef() {
     const r = this.data.rank;
-    return this.cfg.ranks[Math.min(r, this.cfg.ranks.length - 1)];
+    return this.cfg.positions[Math.min(r, this.cfg.positions.length - 1)];
+  },
+
+  /** 别名：语义上更准确 */
+  get positionDef() { return this.rankDef; },
+
+  /** 宗门等级定义 */
+  get gradeDef() {
+    const p = this.data.prestige || 0;
+    let g = this.cfg.grades[0];
+    for (const item of this.cfg.grades) if (p >= item.prestige) g = item;
+    return g;
+  },
+
+  get grade() { return this.gradeDef.id; },
+
+  /** 距离下一宗门等级还差多少声望 */
+  get nextGradeNeed() {
+    const next = this.cfg.grades[this.gradeDef.id];
+    if (!next) return null;
+    return Math.max(0, next.prestige - (this.data.prestige || 0));
+  },
+
+  /** 增加宗门声望（供奉、秘境、弟子出师、宗门任务都会调用） */
+  addPrestige(n) {
+    if (!(n > 0)) return 0;
+    this.data.prestige += n;
+    return n;
   },
 
   /** 可进入的最高秘境层级 */
   get maxTier() {
     return this.data.joined ? this.rankDef.tier : 0;
+  },
+
+  /** 收徒名额上限 */
+  get discipleSlots() {
+    return this.data.joined ? this.rankDef.slots : 0;
+  },
+
+  /** 供奉实际单价（职位越高越便宜） */
+  get offeringCost() {
+    return Math.round(this.cfg.offeringStone * (this.rankDef.offeringMult || 1));
   },
 
   get canJoin() {
@@ -92,17 +154,18 @@ const SectSystem = {
     return d.joined && d.tokenDate !== new Date().toDateString();
   },
 
-  /** 领取每日秘境令 */
+  /** 领取每日秘境令（数量随职位提升） */
   claimDailyTokens() {
     if (!this.data.joined) return { ok: false, msg: '尚未入宗' };
     if (!this.canClaimTokensToday()) return { ok: false, msg: '今日已领过' };
 
+    const amount = this.rankDef.tokens;
     this.data.tokenDate = new Date().toDateString();
-    this.data.tokens += this.cfg.tokenDaily;
-    return { ok: true, amount: this.cfg.tokenDaily };
+    this.data.tokens += amount;
+    return { ok: true, amount };
   },
 
-  /** 供奉：投入灵石换贡献（有每日上限） */
+  /** 供奉：投入灵石换贡献（有每日上限，单价随职位打折） */
   offer(times) {
     const n = Math.max(1, Math.floor(times || 1));
     const d = this.data;
@@ -112,7 +175,8 @@ const SectSystem = {
     const room = this.cfg.dailyContribCap - d.contribToday;
     if (room <= 0) return { ok: false, msg: '今日贡献已满' };
 
-    const cost = this.cfg.offeringStone * n;
+    const unit = this.offeringCost;
+    const cost = unit * n;
     if (GameEngine.state.stone < cost) return { ok: false, msg: '灵石不足' };
 
     GameEngine.state.stone -= cost;
@@ -120,15 +184,26 @@ const SectSystem = {
     d.contrib += gain;
     d.contribToday += gain;
     d.offeringCount += n;
+    // 供奉同时推动宗门声望（全宗受益）
+    this.addPrestige(Math.floor(gain / 2));
 
-    // 职位晋升：达到阈值自动升
     const before = d.rank;
-    for (let i = this.cfg.ranks.length - 1; i >= 0; i--) {
-      if (d.contrib >= this.cfg.ranks[i].contrib) { d.rank = i; break; }
-    }
+    this._refreshRank();
     const promoted = d.rank > before ? this.rankDef : null;
 
-    return { ok: true, contrib: gain, promoted, rank: d.rank };
+    return { ok: true, contrib: gain, promoted, rank: d.rank, cost };
+  },
+
+  /** 依据贡献与宗门等级刷新职位（两者都要满足） */
+  _refreshRank() {
+    const d = this.data;
+    const grade = this.grade;
+    for (let i = this.cfg.positions.length - 1; i >= 0; i--) {
+      const p = this.cfg.positions[i];
+      if (d.contrib >= p.contrib && grade >= p.grade) { d.rank = i; return d.rank; }
+    }
+    d.rank = 0;
+    return 0;
   },
 
   /** 贡献兑换秘境令 */
@@ -141,17 +216,84 @@ const SectSystem = {
     return { ok: true };
   },
 
-  /** 距离下一职位的贡献差 */
+  /** 距离下一职位的贡献差（若卡在宗门等级上会明确告知） */
   get nextRankNeed() {
     const d = this.data;
-    const next = this.cfg.ranks[d.rank + 1];
+    const next = this.cfg.positions[d.rank + 1];
     if (!next) return null;
-    return Math.max(0, next.contrib - d.contrib);
+    return {
+      name: next.name,
+      contrib: Math.max(0, next.contrib - d.contrib),
+      grade: Math.max(0, next.grade - this.grade),
+      gradeName: next.grade > this.grade ? this.cfg.grades[next.grade - 1].name : null,
+    };
+  },
+
+  // ============================
+  // NPC 职位
+  // ============================
+
+  /** 掌门：宗门月例，每日可领一次 */
+  canTakeTask() {
+    const d = this.data;
+    return d.joined && d.taskDate !== new Date().toDateString();
+  },
+
+  takeTask() {
+    const d = this.data;
+    if (!d.joined) return { ok: false, msg: '尚未入宗' };
+    if (!this.canTakeTask()) return { ok: false, msg: '今日已领过月例' };
+
+    d.taskDate = new Date().toDateString();
+    const { contrib, prestige } = this.cfg.sectTask;
+    d.contrib += contrib;
+    this.addPrestige(prestige);
+    const before = d.rank;
+    this._refreshRank();
+
+    return { ok: true, contrib, prestige, promoted: d.rank > before ? this.rankDef : null };
+  },
+
+  /** 传功长老：兑换宗门功法 */
+  canBuyScripture(id) {
+    const s = this.cfg.scriptures.find(x => x.id === id);
+    if (!s) return { ok: false, msg: '无此功法' };
+    const d = this.data;
+    if (!d.joined) return { ok: false, msg: '尚未入宗' };
+    if (d.scriptures[id]) return { ok: false, msg: '已习得' };
+    if (this.grade < s.grade) return { ok: false, msg: `需宗门升至${this.cfg.grades[s.grade - 1].name}` };
+    if (d.contrib < s.contrib) return { ok: false, msg: `贡献不足（需 ${s.contrib}）` };
+    if (GameEngine.state.stone < s.cost) return { ok: false, msg: `灵石不足（需 ${s.cost}）` };
+    return { ok: true };
+  },
+
+  buyScripture(id) {
+    const check = this.canBuyScripture(id);
+    if (!check.ok) return check;
+    const s = this.cfg.scriptures.find(x => x.id === id);
+    const d = this.data;
+    GameEngine.state.stone -= s.cost;
+    d.contrib -= s.contrib;
+    d.scriptures[id] = true;
+    // 并入功法系统，享受其加成
+    if (typeof TechniqueSystem !== 'undefined') {
+      TechniqueSystem._learned[id] = true;
+      TechniqueSystem._save();
+    }
+    return { ok: true, scripture: s };
+  },
+
+  /** 宗门功法列表（含可否购买） */
+  get scriptureList() {
+    return this.cfg.scriptures.map(s => ({
+      ...s,
+      learned: !!this.data.scriptures[s.id],
+      check: this.canBuyScripture(s.id),
+    }));
   },
 
   /** 宗门同门榜（本地模拟：无服务器，仅作宗门氛围与自我对照） */
   get board() {
-    // 用日期做种子，保证同一天内榜单稳定，不会每次刷新乱跳
     const seed = this._daySeed();
     const names = ['明尘', '李扶疏', '沈无咎', '裴照', '何长白'];
     const rows = names.map((name, i) => {
@@ -464,12 +606,10 @@ const DelveSystem = {
     const floorBonus = Math.floor((this.data.floor || 0) * this.cfg.contribPerFloor * (keepRatio >= 1 ? 1 : 0.5));
     if (floorBonus > 0 && SectSystem.data.joined) {
       SectSystem.data.contrib += floorBonus;
+      // 秘境探索同样给宗门涨声望（每层 2 点，重伤减半）
+      SectSystem.addPrestige(Math.round((this.data.floor || 0) * 3 * keepRatio));
       out.contrib = floorBonus;
-      // 贡献变化可能触发晋升
-      const d2 = SectSystem.data;
-      for (let i = GameConfig.sect.ranks.length - 1; i >= 0; i--) {
-        if (d2.contrib >= GameConfig.sect.ranks[i].contrib) { d2.rank = Math.max(d2.rank, i); break; }
-      }
+      SectSystem._refreshRank();
     }
     return out;
   },

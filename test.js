@@ -50,6 +50,7 @@ vm.runInThisContext(loadFile('js/engine.js'), { filename: 'engine.js' });
 vm.runInThisContext(loadFile('js/features.js'), { filename: 'features.js' });
 vm.runInThisContext(loadFile('js/systems.js'), { filename: 'systems.js' });
 vm.runInThisContext(loadFile('js/sect.js'), { filename: 'sect.js' });
+vm.runInThisContext(loadFile('js/disciples.js'), { filename: 'disciples.js' });
 
 // === 测试框架 ===
 let totalTests = 0, passedTests = 0, failedTests = 0;
@@ -1139,12 +1140,12 @@ test('未达筑基不能入宗', () => {
   assert(!r.ok, '应拒绝入宗');
 });
 
-test('筑基后可入宗，职位为外门弟子', () => {
+test('筑基后可入宗，职位为杂役弟子', () => {
   freshSectState(2);
   assert(SectSystem.canJoin, '筑基应可入宗');
   const r = SectSystem.join();
   assert(r.ok, '入宗应成功');
-  assertEq(SectSystem.rankDef.name, '外门弟子');
+  assertEq(SectSystem.rankDef.name, '杂役弟子');
   assertEq(SectSystem.maxTier, 1, '外门只能进第 1 层秘境');
 });
 
@@ -1172,10 +1173,11 @@ test('贡献达标自动晋升并解锁更深秘境', () => {
   SectSystem.join();
   SectSystem.data.contrib = 0;
   // 直接给够贡献再走一次供奉触发晋升判定
-  SectSystem.data.contrib = GameConfig.sect.ranks[2].contrib;
+  SectSystem.data.prestige = 9999;   // 先让宗门等级够格
+  SectSystem.data.contrib = GameConfig.sect.positions[3].contrib;
   SectSystem.data.contribToday = 0;
   SectSystem.offer(1);
-  assertEq(SectSystem.data.rank, 2, '应晋升到真传弟子');
+  assertEq(SectSystem.data.rank, 3, '应晋升到真传弟子');
   assertEq(SectSystem.maxTier, 3, '真传可进第 3 层');
 });
 
@@ -1184,7 +1186,7 @@ test('每日可领秘境令，且一天只能领一次', () => {
   SectSystem.join();
   const r1 = SectSystem.claimDailyTokens();
   assert(r1.ok, '首次领取应成功');
-  assertEq(SectSystem.data.tokens, GameConfig.sect.tokenDaily);
+  assertEq(SectSystem.data.tokens, SectSystem.rankDef.tokens);
   const r2 = SectSystem.claimDailyTokens();
   assert(!r2.ok, '同日重复领取应被拒');
 });
@@ -1350,7 +1352,7 @@ test('职位不足时无法进入高层秘境', () => {
   SectSystem.data.tokens = 5;
   SectSystem.data.rank = 0;
   const r = DelveSystem.enter(3);
-  assert(!r.ok, '外门弟子不应能进第 3 层');
+  assert(!r.ok, '杂役弟子不应能进第 3 层');
 });
 
 test('同门榜包含自己且按分数排序', () => {
@@ -1362,6 +1364,249 @@ test('同门榜包含自己且按分数排序', () => {
   for (let i = 1; i < board.length; i++) {
     assert(board[i - 1].score >= board[i].score, '应按分数降序');
   }
+});
+
+// ===========================
+// 17. 宗门等级 · 职位 · 收徒（MECH-021 / MECH-023）
+// ===========================
+console.log('\n=== 17. 宗门等级与收徒 ===');
+
+function freshSect2(opts) {
+  const o = opts || {};
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = o.realm || 3;
+  GameEngine.state.level = 1;
+  GameEngine.state.stone = o.stone === undefined ? 20000 : o.stone;
+  GameEngine.state.spiritSense = 30;
+  GameEngine.state.mana = 200;
+  GameEngine.state.health = 200;
+  GameEngine.state.cultivation = 0;
+  SectSystem.ensure();
+  DiscipleSystem.ensure();
+  if (o.join !== false) SectSystem.join();
+  if (o.contrib !== undefined) SectSystem.data.contrib = o.contrib;
+  if (o.prestige !== undefined) SectSystem.data.prestige = o.prestige;
+  if (o.rank !== undefined) SectSystem.data.rank = o.rank;
+  return GameEngine.state;
+}
+
+test('入宗即为杂役弟子，且无收徒名额', () => {
+  freshSect2();
+  assertEq(SectSystem.rankDef.name, '杂役弟子');
+  assertEq(SectSystem.discipleSlots, 0);
+  const r = DiscipleSystem.canRecruit;
+  assert(!r.ok, '杂役弟子不应能收徒');
+});
+
+test('职位晋升需同时满足贡献与宗门等级', () => {
+  freshSect2({ contrib: 99999, prestige: 0 });
+  const before = SectSystem.data.rank;
+  assert(before <= 1, `宗门等级不足时不应越级，实际 rank=${before}`);
+
+  freshSect2({ contrib: 99999, prestige: 99999 });
+  SectSystem._refreshRank();
+  assertEq(SectSystem.data.rank, GameConfig.sect.positions.length - 1, '两项都满足应到顶');
+});
+
+test('宗门等级由声望决定', () => {
+  freshSect2({ prestige: 0 });
+  assertEq(SectSystem.grade, 1);
+  SectSystem.data.prestige = 300;
+  assertEq(SectSystem.grade, 2);
+  SectSystem.data.prestige = 4000;
+  assertEq(SectSystem.grade, 5);
+});
+
+test('职位越高：日令越多、供奉越便宜', () => {
+  freshSect2();
+  const low = { tokens: SectSystem.rankDef.tokens, cost: SectSystem.offeringCost };
+  SectSystem.data.prestige = 99999;
+  SectSystem.data.contrib = 99999;
+  SectSystem._refreshRank();
+  const high = { tokens: SectSystem.rankDef.tokens, cost: SectSystem.offeringCost };
+  assert(high.tokens > low.tokens, `高职位日令应更多：${low.tokens} → ${high.tokens}`);
+  assert(high.cost < low.cost, `高职位供奉应更便宜：${low.cost} → ${high.cost}`);
+});
+
+test('掌门月例每日只能领一次', () => {
+  freshSect2();
+  const c0 = SectSystem.data.contrib;
+  const p0 = SectSystem.data.prestige;
+  const r1 = SectSystem.takeTask();
+  assert(r1.ok, '首次应可领');
+  assert(SectSystem.data.contrib > c0, '应加贡献');
+  assert(SectSystem.data.prestige > p0, '应加声望');
+  const r2 = SectSystem.takeTask();
+  assert(!r2.ok, '同日重复领取应被拒');
+});
+
+test('传功长老：宗门等级不足时无法换功法', () => {
+  freshSect2({ contrib: 9999, prestige: 0 });
+  const s = GameConfig.sect.scriptures[0];
+  const r = SectSystem.buyScripture(s.id);
+  assert(!r.ok, '宗门等级不足应被拒');
+  assert(/宗门/.test(r.msg), `提示应提到宗门等级，实际：${r.msg}`);
+});
+
+test('传功长老：条件满足后可习得宗门功法', () => {
+  freshSect2({ contrib: 9999, prestige: 99999 });
+  SectSystem._refreshRank();
+  const s = GameConfig.sect.scriptures[0];
+  const stone0 = GameEngine.state.stone;
+  const r = SectSystem.buyScripture(s.id);
+  assert(r.ok, `应可换：${r.msg || ''}`);
+  assertEq(GameEngine.state.stone, stone0 - s.cost, '应扣灵石');
+  assert(TechniqueSystem._learned[s.id], '应并入功法系统');
+  TechniqueSystem._learned = {};
+});
+
+test('真传弟子起方可收徒，且受名额限制', () => {
+  freshSect2({ contrib: 1500, prestige: 4000 });
+  SectSystem._refreshRank();
+  assertEq(SectSystem.rankDef.name, '真传弟子');
+  assertEq(SectSystem.discipleSlots, 1);
+
+  const r = DiscipleSystem.recruit();
+  assert(r.ok, '应可收徒');
+  assertEq(DiscipleSystem.count, 1);
+
+  const r2 = DiscipleSystem.canRecruit;
+  assert(!r2.ok, '名额已满应被拒');
+});
+
+test('收徒消耗灵石与贡献', () => {
+  freshSect2({ contrib: 2000, prestige: 4000 });
+  SectSystem._refreshRank();
+  const stone0 = GameEngine.state.stone;
+  const c0 = SectSystem.data.contrib;
+  DiscipleSystem.recruit();
+  assertEq(GameEngine.state.stone, stone0 - GameConfig.disciple.recruitStone);
+  assertEq(SectSystem.data.contrib, c0 - GameConfig.disciple.recruitContrib);
+});
+
+test('弟子随时间增长修为', () => {
+  freshSect2({ contrib: 2000, prestige: 4000 });
+  SectSystem._refreshRank();
+  DiscipleSystem.recruit();
+  const d = DiscipleSystem.list[0];
+  const c0 = d.cultivation;
+  DiscipleSystem.tick(60 * 5);   // 5 分钟
+  assert(d.cultivation > c0, `修为应增长：${c0} → ${d.cultivation}`);
+});
+
+test('指点提升忠诚但消耗灵石', () => {
+  freshSect2({ contrib: 2000, prestige: 4000 });
+  SectSystem._refreshRank();
+  DiscipleSystem.recruit();
+  const d = DiscipleSystem.list[0];
+  d.loyalty = 30;
+  const stone0 = GameEngine.state.stone;
+  const r = DiscipleSystem.advise(d.id);
+  assert(r.ok, '指点应成功');
+  assert(d.loyalty > 30, '忠诚应提升');
+  assertEq(GameEngine.state.stone, stone0 - GameConfig.disciple.adviseStone);
+});
+
+test('传功消耗自身修为换弟子进度', () => {
+  freshSect2({ contrib: 2000, prestige: 4000 });
+  SectSystem._refreshRank();
+  DiscipleSystem.recruit();
+  const d = DiscipleSystem.list[0];
+  const cap = calcQ(GameEngine.state.realm, GameEngine.state.level, 1.0);
+  GameEngine.state.cultivation = cap;
+  const c0 = d.cultivation;
+  const r = DiscipleSystem.impart(d.id);
+  assert(r.ok, `传功应成功：${r.msg || ''}`);
+  assert(GameEngine.state.cultivation < cap, '应消耗自身修为');
+  assert(d.cultivation > c0, '弟子修为应提升');
+});
+
+test('修为不足时不能传功', () => {
+  freshSect2({ contrib: 2000, prestige: 4000 });
+  SectSystem._refreshRank();
+  DiscipleSystem.recruit();
+  GameEngine.state.cultivation = 0;
+  const r = DiscipleSystem.impart(DiscipleSystem.list[0].id);
+  assert(!r.ok, '修为为 0 时不应能传功');
+});
+
+test('教习磨资质每日一次', () => {
+  freshSect2({ contrib: 2000, prestige: 4000 });
+  SectSystem._refreshRank();
+  DiscipleSystem.recruit();
+  const d = DiscipleSystem.list[0];
+  d.aptitude = 2;
+  const r1 = DiscipleSystem.train(d.id);
+  assert(r1.ok, '首次应可磨');
+  assertEq(d.aptitude, 3, '资质应 +1');
+  const r2 = DiscipleSystem.train(d.id);
+  assert(!r2.ok, '同日重复磨应被拒');
+});
+
+test('修为满可升亲传，亲传出师给声望与贡献', () => {
+  freshSect2({ contrib: 2000, prestige: 4000 });
+  SectSystem._refreshRank();
+  DiscipleSystem.recruit();
+  const d = DiscipleSystem.list[0];
+  d.cultivation = 100;
+
+  const pro = DiscipleSystem.canPromote(d.id);
+  assert(pro.ok && pro.next === 1, '应可升亲传');
+  const r1 = DiscipleSystem.promote(d.id);
+  assert(r1.ok && r1.stage === 1, '应升为亲传');
+  assertEq(d.stage, 1);
+
+  d.cultivation = 100;
+  const p0 = SectSystem.data.prestige;
+  const c0 = SectSystem.data.contrib;
+  const r2 = DiscipleSystem.promote(d.id);
+  assert(r2.ok && r2.stage === 2, '应出师');
+  assert(SectSystem.data.prestige > p0, '应加声望');
+  assert(SectSystem.data.contrib > c0, '应加贡献');
+  assertEq(DiscipleSystem.count, 0, '出师后应移出师门名录');
+  assert(SectSystem.data.graduated.some(x => x.name === d.name), '应记入门下名录');
+});
+
+test('忠诚过低会叛出师门', () => {
+  freshSect2({ contrib: 2000, prestige: 4000 });
+  SectSystem._refreshRank();
+  DiscipleSystem.recruit();
+  const d = DiscipleSystem.list[0];
+  d.loyalty = 0;
+
+  const origRandom = Math.random;
+  Math.random = () => 0;                 // 强制触发叛出判定
+  DiscipleSystem.tick(60 * 60);          // 跑 1 小时
+  Math.random = origRandom;
+
+  assertEq(DiscipleSystem.count, 0, '应叛出');
+});
+
+test('旧档职位索引迁移：外门 → 新体系外门', () => {
+  const old = SaveSystem.createDefault();
+  old.sect.joined = true;
+  old.sect.rank = 0;            // 旧体系 0 = 外门弟子
+  delete old.sect.schema;       // 模拟 v1 存档（无 schema 字段）
+  delete old.sect.prestige;
+  GameEngine.state = SaveSystem._ensureShape(old);
+  const d = SectSystem.ensure();
+  assertEq(d.rank, 1, '旧「外门」应迁到新索引 1');
+  assertEq(SectSystem.rankDef.name, '外门弟子');
+  assertEq(d.schema, GameConfig.sect.schema, '应标记为新 schema');
+});
+
+test('弟子产出贡献与灵石', () => {
+  freshSect2({ contrib: 2000, prestige: 4000 });
+  SectSystem._refreshRank();
+  DiscipleSystem.recruit();
+  const d = DiscipleSystem.list[0];
+  d.aptitude = 5;
+  d.loyalty = 80;
+  const c0 = SectSystem.data.contrib;
+  const s0 = GameEngine.state.stone;
+  DiscipleSystem.tick(60 * 30);   // 30 分钟
+  assert(SectSystem.data.contrib > c0, '应产出贡献');
+  assert(GameEngine.state.stone > s0, '应产出灵石');
 });
 
 // ===========================

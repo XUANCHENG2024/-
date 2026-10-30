@@ -55,6 +55,7 @@ const GameEngine = {
       this._tickFarming(dt);
       this._tickAlchemy(dt);
       this._tickMeditation(dt);
+      if (typeof DiscipleSystem !== 'undefined') DiscipleSystem.tick(dt);
 
       // 自动存档（60秒）
       // 检测到另一个标签页在写同一份存档时停手，避免互相覆盖

@@ -568,25 +568,59 @@
 
         <!-- 已入宗：宗门状态 -->
         <div class="sect-body" id="sect-body" hidden>
+          <!-- 宗门等级 -->
+          <div class="sect-grade">
+            <div class="sect-grade-head">
+              <span class="grade-name" id="sect-grade-name">末流小宗</span>
+              <span class="grade-prestige">声望 <b id="sect-prestige">0</b></span>
+            </div>
+            <div class="sect-bar"><div class="sect-bar-fill" id="sect-grade-fill"></div></div>
+            <p class="sect-next" id="sect-grade-next">距三流宗门还差 1200 声望</p>
+          </div>
+
+          <!-- 职位 -->
           <div class="sect-head">
             <div class="sect-rank">
-              <b id="sect-rank-name">外门弟子</b>
+              <b id="sect-rank-name">杂役弟子</b>
               <span id="sect-contrib">贡献 0</span>
             </div>
             <span class="sect-token">秘境令 <b id="sect-tokens">0</b></span>
           </div>
 
           <div class="sect-bar"><div class="sect-bar-fill" id="sect-bar-fill"></div></div>
-          <p class="sect-next" id="sect-next">距内门弟子还差 200 贡献</p>
+          <p class="sect-next" id="sect-next">距外门弟子还差 200 贡献</p>
+
+          <!-- 当前职位的权限与职责 -->
+          <div class="sect-duty">
+            <div class="duty-row"><i>职责</i><span id="sect-duty">洒扫山门、照看灵田</span></div>
+            <div class="duty-row"><i>权限</i><span id="sect-right">秘境一层</span></div>
+          </div>
+
+          <!-- NPC 职位 -->
+          <div class="sect-npc" id="sect-npc"></div>
+
+          <!-- 收徒 -->
+          <div class="sect-disciple">
+            <div class="sect-disciple-head">
+              <span>门下弟子</span>
+              <small id="disciple-slots">0 / 0</small>
+            </div>
+            <div class="disciple-list" id="disciple-list"></div>
+            <button class="btn-action sect-btn disciple-recruit" data-action="disciple-recruit" id="btn-recruit">
+              <svg class="ico"><use href="#i-pet"/></svg>
+              <span class="pb-text"><b>收徒</b><small>300 灵石 · 20 贡献</small></span>
+            </button>
+            <p class="sect-next" id="disciple-hint">真传弟子起可收徒</p>
+          </div>
 
           <div class="sect-actions">
             <button class="btn-action btn-ghost sect-btn" data-action="sect-offer">
               <svg class="ico"><use href="#i-stone"/></svg>
-              <span class="pb-text"><b>供奉</b><small>100 灵石 → 10 贡献</small></span>
+              <span class="pb-text"><b>供奉</b><small id="sect-offer-hint">100 灵石 → 10 贡献</small></span>
             </button>
             <button class="btn-action btn-ghost sect-btn" data-action="sect-claim">
               <svg class="ico"><use href="#i-claim"/></svg>
-              <span class="pb-text"><b>领令</b><small>每日 3 枚</small></span>
+              <span class="pb-text"><b>领令</b><small id="sect-claim-hint">每日 1 枚</small></span>
             </button>
             <button class="btn-action btn-ghost sect-btn" data-action="sect-buytoken">
               <svg class="ico"><use href="#i-bolt"/></svg>
@@ -729,6 +763,7 @@
   <script src="js/features.js"></script>
   <script src="js/systems.js"></script>
   <script src="js/sect.js"></script>
+  <script src="js/disciples.js"></script>
   <script src="js/ui.js"></script>
   <script src="js/app.js"></script>
 </body>

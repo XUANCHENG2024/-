@@ -62,12 +62,19 @@ const SaveSystem = {
         joined: false,
         contrib: 0,
         rank: 0,
+        prestige: 0,
         tokens: 0,
         tokenDate: '',
         contribDate: '',
         contribToday: 0,
         offeringCount: 0,
+        schema: GameConfig.sect.schema,
+        taskDate: '',
+        scriptures: {},
+        graduated: [],
       },
+      // 弟子（MECH-023）
+      disciples: [],
       // 秘境（MECH-022）
       delve: {
         active: false,
@@ -206,9 +213,29 @@ const SaveSystem = {
     out.injuryUntil = Math.max(0, Number(out.injuryUntil) || 0);
 
     // 宗门结构
-    if (!out.sect || typeof out.sect !== 'object') out.sect = base.sect;
+    if (!out.sect || typeof out.sect !== 'object') out.sect = { ...base.sect };
+    const rawSect = (data && typeof data.sect === 'object' && data.sect) || null;
+    const isV1Sect = !!(rawSect && typeof rawSect.schema !== 'number');
     out.sect = { ...base.sect, ...out.sect };
-    out.sect.rank = Math.min(Math.max(0, Number(out.sect.rank) || 0), GameConfig.sect.ranks.length - 1);
+    out.sect.rank = Math.min(Math.max(0, Number(out.sect.rank) || 0), GameConfig.sect.positions.length - 1);
+    out.sect.prestige = Math.max(0, Number(out.sect.prestige) || 0);
+    if (!out.sect.scriptures || typeof out.sect.scriptures !== 'object') out.sect.scriptures = {};
+    if (!Array.isArray(out.sect.graduated)) out.sect.graduated = [];
+
+    // v1 职位体系只有 4 级（外门/内门/真传/执事），新版是 7 级且多了「杂役弟子」垫底，
+    // 索引整体 +1。必须在合并默认值之前判断原始存档有没有 schema 字段，
+    // 合并之后 base.sect.schema 会把缺失掩盖掉。
+    if (isV1Sect) {
+      out.sect.rank = Math.min(out.sect.rank + 1, GameConfig.sect.positions.length - 1);
+      // 旧档能到的职位不该因为改版而掉级，用声望兜住门槛
+      const needGrade = GameConfig.sect.positions[out.sect.rank].grade;
+      out.sect.prestige = Math.max(out.sect.prestige, GameConfig.sect.grades[needGrade - 1].prestige);
+      out.sect.schema = GameConfig.sect.schema;
+    }
+
+    // 弟子阵列：结构兜底交给 DiscipleSystem.ensure 做二次清洗，
+    // 这里只保证它是数组，避免读档时 tick 里 .length 报错
+    if (!Array.isArray(out.disciples)) out.disciples = [];
 
     // 秘境结构：进行中的探险也要能续上，否则刷新页面就白丢一次门票
     if (!out.delve || typeof out.delve !== 'object') out.delve = base.delve;

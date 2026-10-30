@@ -962,6 +962,122 @@ const UI = {
           break;
         }
 
+        // === 宗门 NPC 职位 ===
+        case 'sect-task': {
+          const r = SectSystem.takeTask();
+          if (r.ok) {
+            this.showToast(`月例已领：贡献 +${r.contrib} · 声望 +${r.prestige}`);
+            if (r.promoted) this.showToast(`晋升 ${r.promoted.name}`);
+            SoundFX.play('harvest'); Haptic.light();
+            this._sectCache = {};
+          } else {
+            this.showToast(r.msg);
+            SoundFX.play('deny');
+          }
+          break;
+        }
+        case 'sect-scripture': {
+          const list = SectSystem.scriptureList.filter(s => !s.learned);
+          if (!list.length) { this.showToast('宗门功法已尽得'); break; }
+          // 只列第一本可换的，简化交互；不能换的给出原因
+          const target = list.find(s => s.check.ok) || list[0];
+          const r = SectSystem.buyScripture(target.id);
+          if (r.ok) {
+            this.showToast(`习得《${r.scripture.name}》`);
+            SoundFX.play('breakthrough'); Haptic.success();
+            this._sectCache = {};
+          } else {
+            this.showToast(`${target.name}：${r.msg}`);
+            SoundFX.play('deny');
+          }
+          break;
+        }
+        case 'sect-train': {
+          const list = DiscipleSystem.list;
+          if (!list.length) { this.showToast('门下尚无弟子'); break; }
+          const target = list.find(d => DiscipleSystem.canTrain(d.id).ok);
+          if (!target) { this.showToast('今日都磨过了，或灵石不足'); SoundFX.play('deny'); break; }
+          const r = DiscipleSystem.train(target.id);
+          if (r.ok) {
+            this.showToast(`${target.name} 资质提升至 ${DiscipleSystem.aptitudeName(r.aptitude)}`);
+            SoundFX.play('craft_done'); Haptic.light();
+            this._sectCache = {};
+          } else {
+            this.showToast(r.msg);
+            SoundFX.play('deny');
+          }
+          break;
+        }
+
+        // === 收徒 ===
+        case 'disciple-recruit': {
+          const r = DiscipleSystem.recruit();
+          if (r.ok) {
+            this.showToast(`收下弟子 ${r.disciple.name}（${DiscipleSystem.aptitudeName(r.disciple.aptitude)}）`);
+            SoundFX.play('breakthrough'); Haptic.success();
+            if (typeof CharacterVoice !== 'undefined') CharacterVoice.say('disciple', 250);
+            this._sectCache = {};
+            this._needsFullRebuild = true;
+          } else {
+            this.showToast(r.msg);
+            SoundFX.play('deny');
+          }
+          break;
+        }
+        case 'disciple-advise': {
+          const r = DiscipleSystem.advise(btn.dataset.id);
+          this.showToast(r.ok ? '指点一番，道心稍稳' : r.msg);
+          if (r.ok) { SoundFX.play('click'); Haptic.light(); this._sectCache = {}; }
+          else SoundFX.play('deny');
+          break;
+        }
+        case 'disciple-impart': {
+          const r = DiscipleSystem.impart(btn.dataset.id);
+          if (r.ok) {
+            this.showToast(`传功 ${Math.round(r.cost)} 修为，弟子修为至 ${Math.floor(r.cultivation)}`);
+            SoundFX.play('craft_done'); Haptic.success();
+            this._sectCache = {}; this._hudCache = {};
+          } else {
+            this.showToast(r.msg);
+            SoundFX.play('deny');
+          }
+          break;
+        }
+        case 'disciple-train': {
+          const r = DiscipleSystem.train(btn.dataset.id);
+          if (r.ok) {
+            this.showToast(`资质提升至 ${DiscipleSystem.aptitudeName(r.aptitude)}`);
+            SoundFX.play('craft_done'); Haptic.light();
+            this._sectCache = {};
+          } else {
+            this.showToast(r.msg);
+            SoundFX.play('deny');
+          }
+          break;
+        }
+        case 'disciple-promote': {
+          const r = DiscipleSystem.promote(btn.dataset.id);
+          if (r.ok && r.stage === 1) {
+            this.showToast('已收为亲传弟子');
+            SoundFX.play('breakthrough'); Haptic.success();
+            this._sectCache = {};
+          } else if (r.ok && r.stage === 2) {
+            this.showModal('弟子出师', `
+              <p class="delve-sum-lead">${r.name} 今日出师，拜别山门。</p>
+              <div class="offline-gains">
+                <div class="gain-row"><span>宗门声望</span><b>+${r.prestige}</b></div>
+                <div class="gain-row"><span>宗门贡献</span><b>+${r.contrib}</b></div>
+              </div>`);
+            SoundFX.play('breakthrough'); Haptic.heavy();
+            this._sectCache = {};
+            this._needsFullRebuild = true;
+          } else {
+            this.showToast(r.msg);
+            SoundFX.play('deny');
+          }
+          break;
+        }
+
         // === 秘境 ===
         case 'delve-enter': {
           const tierId = parseInt(btn.dataset.index, 10);
@@ -1538,20 +1654,46 @@ UI.refreshSect = function (force) {
       const el = document.getElementById(id);
       if (el) el.textContent = val;
     };
-    put('sect-rank-name', SectSystem.rankDef.name);
+
+    // 宗门等级
+    const g = SectSystem.gradeDef;
+    put('sect-grade-name', g.name);
+    put('sect-prestige', d.prestige || 0);
+    const gNeed = SectSystem.nextGradeNeed;
+    put('sect-grade-next', gNeed === null
+      ? '已至顶级圣地'
+      : `距${GameConfig.sect.grades[g.id].name}还差 ${gNeed} 声望`);
+    const gNext = GameConfig.sect.grades[g.id];
+    const gPrevP = g.prestige;
+    const gNextP = gNext ? gNext.prestige : gPrevP;
+    const gPct = gNextP > gPrevP ? ((d.prestige - gPrevP) / (gNextP - gPrevP) * 100) : 100;
+    const gPctStr = Math.max(0, Math.min(100, gPct)).toFixed(0) + '%';
+    if (cache.gradeBar !== gPctStr) {
+      cache.gradeBar = gPctStr;
+      const bar = document.getElementById('sect-grade-fill');
+      if (bar) bar.style.width = gPctStr;
+    }
+
+    // 职位
+    const pos = SectSystem.rankDef;
+    put('sect-rank-name', pos.name);
     put('sect-contrib', `贡献 ${d.contrib}`);
     put('sect-tokens', d.tokens);
+    put('sect-duty', pos.duty);
+    put('sect-right', pos.right);
 
     const need = SectSystem.nextRankNeed;
-    const nextDef = GameConfig.sect.ranks[d.rank + 1];
     put('sect-next', need === null
-      ? '已至最高职位'
-      : `距${nextDef.name}还差 ${need} 贡献`);
+      ? '已至太上长老'
+      : (need.grade > 0
+        ? `距${need.name}还差 ${need.contrib} 贡献，且宗门需升至${need.gradeName}`
+        : `距${need.name}还差 ${need.contrib} 贡献`));
 
-    // 进度条：当前职位到下一职位之间的完成度
-    const cur = GameConfig.sect.ranks[d.rank].contrib;
-    const nxt = nextDef ? nextDef.contrib : cur;
-    const pct = nxt > cur ? ((d.contrib - cur) / (nxt - cur) * 100) : 100;
+    // 职位进度条
+    const cur = pos.contrib;
+    const nxt = GameConfig.sect.positions[d.rank + 1];
+    const nxtC = nxt ? nxt.contrib : cur;
+    const pct = nxtC > cur ? ((d.contrib - cur) / (nxtC - cur) * 100) : 100;
     const pctStr = Math.max(0, Math.min(100, pct)).toFixed(0) + '%';
     if (cache.sectBar !== pctStr) {
       cache.sectBar = pctStr;
@@ -1559,13 +1701,23 @@ UI.refreshSect = function (force) {
       if (bar) bar.style.width = pctStr;
     }
 
-    // 疗伤按钮：仅在有伤势时出现
+    // 供奉/领令文案随职位变化
+    put('sect-offer-hint', `${SectSystem.offeringCost} 灵石 → 10 贡献`);
+    put('sect-claim-hint', `每日 ${pos.tokens} 枚`);
+
+    // 疗伤按钮
     const healBtn = document.getElementById('btn-sect-heal');
     const injured = DelveSystem.hasInjury();
     if (healBtn && cache.injured !== injured) {
       cache.injured = injured;
       healBtn.hidden = !injured;
     }
+
+    // NPC 职位
+    this._renderSectNpcs(cache);
+
+    // 收徒
+    this._renderDisciples(cache);
 
     // 同门榜
     const board = document.getElementById('sect-board');
@@ -1584,6 +1736,122 @@ UI.refreshSect = function (force) {
 
   // —— 秘境 ——
   this._refreshDelve(force);
+};
+
+// ============================
+// NPC 职位
+// ============================
+UI._renderSectNpcs = function (cache) {
+  const el = document.getElementById('sect-npc');
+  if (!el) return;
+
+  const d = SectSystem.data;
+  const canTask = SectSystem.canTakeTask();
+  const script = SectSystem.scriptureList;
+  const buyable = script.filter(s => !s.learned).length;
+  const canTrainAny = DiscipleSystem.list.some(x => DiscipleSystem.canTrain(x.id).ok);
+
+  const sig = [
+    d.rank, canTask ? 1 : 0, buyable,
+    script.filter(s => s.learned).length, canTrainAny ? 1 : 0,
+  ].join('|');
+  if (cache.npcSig === sig) return;
+  cache.npcSig = sig;
+
+  const rows = GameConfig.sect.npcPosts.map(post => {
+    let badge = '';
+    let disabled = false;
+    if (post.action === 'sect-task') {
+      badge = canTask ? '可领' : '已领';
+      disabled = !canTask;
+    } else if (post.action === 'sect-scripture') {
+      badge = buyable > 0 ? `${buyable} 部可换` : '已尽得';
+      disabled = buyable === 0;
+    } else if (post.action === 'sect-train') {
+      badge = canTrainAny ? '可磨' : '—';
+      disabled = !canTrainAny;
+    } else {
+      badge = '供奉 · 换令';
+    }
+
+    return `
+      <button class="npc-row ${disabled ? 'is-off' : ''}" data-action="${post.action}">
+        <span class="npc-title">${post.title}</span>
+        <span class="npc-name">${post.npc}</span>
+        <span class="npc-line">${post.line}</span>
+        <span class="npc-badge">${badge}</span>
+      </button>`;
+  }).join('');
+
+  el.innerHTML = rows;
+};
+
+// ============================
+// 收徒
+// ============================
+UI._renderDisciples = function (cache) {
+  const listEl = document.getElementById('disciple-list');
+  if (!listEl) return;
+
+  const list = DiscipleSystem.list;
+  const slots = DiscipleSystem.slots;
+  const put = (id, val) => {
+    if (cache[id] === val) return;
+    cache[id] = val;
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+  };
+
+  put('disciple-slots', `${list.length} / ${slots}`);
+
+  const check = DiscipleSystem.canRecruit;
+  put('disciple-hint', check.ok ? '门下尚有虚席' : check.msg);
+
+  const btn = document.getElementById('btn-recruit');
+  const off = !check.ok;
+  if (btn && cache.recruitOff !== off) {
+    cache.recruitOff = off;
+    btn.disabled = off;
+    btn.classList.toggle('is-off', off);
+  }
+
+  const sig = list.map(x =>
+    `${x.id}${Math.floor(x.cultivation)}${x.aptitude}${x.stage}${Math.floor(x.loyalty / 10)}`
+  ).join('|') + `#${slots}`;
+  if (cache.disSig === sig) return;
+  cache.disSig = sig;
+
+  if (!list.length) {
+    listEl.innerHTML = `<p class="disciple-empty">${slots > 0
+      ? '门下尚无弟子。收一名徒弟，从此有人喊你师父。'
+      : '升至真传弟子后，方可开门收徒。'}</p>`;
+    return;
+  }
+
+  listEl.innerHTML = list.map(d => {
+    const cul = Math.floor(d.cultivation);
+    const loyaltyCls = d.loyalty < GameConfig.disciple.loyaltyWarning ? 'is-low'
+      : (d.loyalty < 40 ? 'is-warn' : '');
+    const canPro = DiscipleSystem.canPromote(d.id);
+    return `
+      <div class="disciple-card">
+        <div class="disciple-head">
+          <span class="disciple-name">${d.name}</span>
+          <span class="disciple-apt">${DiscipleSystem.aptitudeName(d.aptitude)}</span>
+          <span class="disciple-stage">${DiscipleSystem.stageName(d.stage)}</span>
+        </div>
+        <div class="disciple-bars">
+          <div class="disciple-bar"><i>修为</i><div class="disciple-bar-track"><div class="disciple-bar-fill" style="width:${cul}%"></div></div><b>${cul}</b></div>
+          <div class="disciple-bar ${loyaltyCls}"><i>忠诚</i><div class="disciple-bar-track"><div class="disciple-bar-fill" style="width:${Math.floor(d.loyalty)}%"></div></div><b>${Math.floor(d.loyalty)}</b></div>
+        </div>
+        <div class="disciple-actions">
+          <button class="disciple-btn" data-action="disciple-advise" data-id="${d.id}">指点</button>
+          <button class="disciple-btn" data-action="disciple-impart" data-id="${d.id}">传功</button>
+          <button class="disciple-btn" data-action="disciple-train" data-id="${d.id}">磨资质</button>
+          <button class="disciple-btn ${canPro.ok ? 'is-primary' : ''}" data-action="disciple-promote" data-id="${d.id}">${canPro.ok ? canPro.label : '修为未足'}</button>
+        </div>
+      </div>`;
+  }).join('');
 };
 
 UI._refreshDelve = function (force) {

@@ -4247,3 +4247,248 @@ body {
   .delve-door { flex-direction: row; justify-content: flex-start; text-align: left; gap: 8px; }
   .door-desc { display: none; }
 }
+
+/* ============================================================
+   宗门等级 · 职位 · NPC 职位 · 收徒（MECH-021 / MECH-023）
+   ============================================================ */
+
+/* 宗门等级 */
+.sect-grade {
+  padding: var(--s3) var(--s4);
+  margin-bottom: var(--s4);
+  border-radius: var(--r2);
+  background:
+    radial-gradient(120% 100% at 8% 0%, rgba(228, 200, 126, .22), transparent 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, .62), rgba(249, 244, 232, .3));
+  box-shadow: inset 0 0 0 1px rgba(196, 153, 47, .24), inset 0 1px 0 rgba(255, 255, 255, .75);
+}
+.sect-grade-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--s2);
+}
+.grade-name {
+  font-family: var(--serif);
+  font-size: 1.0625rem;
+  letter-spacing: .16em;
+  color: var(--ink-900);
+}
+.grade-prestige {
+  font-size: var(--t-xs);
+  color: var(--ink-500);
+}
+.grade-prestige b {
+  font-family: var(--serif);
+  font-size: 0.9375rem;
+  color: var(--gold-700);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 职责 / 权限 */
+.sect-duty {
+  margin-top: var(--s3);
+  padding: var(--s3);
+  border-radius: var(--r2);
+  background: rgba(60, 50, 30, .035);
+  box-shadow: inset 0 0 0 1px rgba(60, 50, 30, .07);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.duty-row {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  gap: var(--s2);
+  font-size: var(--t-xs);
+  line-height: 1.6;
+}
+.duty-row i {
+  font-style: normal;
+  color: var(--gold-700);
+  letter-spacing: .08em;
+}
+.duty-row span { color: var(--ink-700); }
+
+/* NPC 职位 */
+.sect-npc {
+  margin-top: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.npc-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas:
+    "title name badge"
+    "line  line line";
+  align-items: center;
+  gap: 2px var(--s2);
+  padding: 9px 11px;
+  border-radius: var(--r2);
+  text-align: left;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .8), rgba(246, 240, 226, .55));
+  box-shadow: inset 0 0 0 1px rgba(60, 50, 30, .1), 0 1px 2px rgba(50, 40, 22, .05);
+  transition: transform .12s ease, box-shadow .18s ease, opacity .18s ease;
+}
+.npc-row:active { transform: translateY(1px) scale(.99); }
+.npc-row.is-off { opacity: .5; pointer-events: none; }
+.npc-title {
+  grid-area: title;
+  font-size: 10px;
+  letter-spacing: .06em;
+  color: var(--gold-700);
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(196, 153, 47, .12);
+}
+.npc-name {
+  grid-area: name;
+  font-family: var(--serif);
+  font-size: var(--t-sm);
+  letter-spacing: .08em;
+  color: var(--ink-900);
+}
+.npc-badge {
+  grid-area: badge;
+  font-size: 10px;
+  color: var(--ink-500);
+  font-variant-numeric: tabular-nums;
+}
+.npc-line {
+  grid-area: line;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--ink-500);
+  opacity: .9;
+}
+
+/* 收徒 */
+.sect-disciple {
+  margin-top: var(--s5);
+  padding-top: var(--s4);
+  border-top: 1px dashed rgba(58, 58, 58, .16);
+}
+.sect-disciple-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--s3);
+  font-family: var(--serif);
+  font-size: var(--t-card);
+  letter-spacing: .1em;
+  color: var(--ink-900);
+}
+.sect-disciple-head small {
+  font-family: inherit;
+  font-size: var(--t-xs);
+  letter-spacing: .02em;
+  color: var(--ink-500);
+  font-variant-numeric: tabular-nums;
+}
+.disciple-list { display: flex; flex-direction: column; gap: var(--s2); }
+.disciple-empty {
+  padding: var(--s4) var(--s3);
+  border-radius: var(--r2);
+  background: rgba(60, 50, 30, .03);
+  box-shadow: inset 0 0 0 1px rgba(60, 50, 30, .07);
+  font-size: var(--t-xs);
+  line-height: 1.8;
+  color: var(--ink-500);
+  text-align: center;
+}
+.disciple-card {
+  padding: var(--s3);
+  border-radius: var(--r2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .86), rgba(248, 243, 231, .6));
+  box-shadow: inset 0 0 0 1px rgba(60, 50, 30, .1), 0 1px 3px rgba(50, 40, 22, .05);
+}
+.disciple-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+}
+.disciple-name {
+  font-family: var(--serif);
+  font-size: var(--t-sm);
+  letter-spacing: .1em;
+  color: var(--ink-900);
+}
+.disciple-apt {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  color: var(--gold-700);
+  background: rgba(196, 153, 47, .13);
+}
+.disciple-stage {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: .06em;
+  color: var(--ink-500);
+}
+.disciple-bars { display: flex; flex-direction: column; gap: 4px; }
+.disciple-bar {
+  display: grid;
+  grid-template-columns: 26px 1fr 28px;
+  align-items: center;
+  gap: var(--s2);
+  font-size: 10px;
+  color: var(--ink-500);
+}
+.disciple-bar i { font-style: normal; letter-spacing: .04em; }
+.disciple-bar b {
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-700);
+}
+.disciple-bar-track {
+  height: 5px;
+  border-radius: var(--r-full);
+  background: rgba(60, 50, 30, .1);
+  overflow: hidden;
+}
+.disciple-bar-fill {
+  height: 100%;
+  width: 0;
+  border-radius: var(--r-full);
+  background: linear-gradient(90deg, rgba(196, 153, 47, .5), rgba(228, 200, 126, .95));
+  transition: width .3s var(--ease-out);
+}
+.disciple-bar.is-warn .disciple-bar-fill { background: linear-gradient(90deg, #C89A50, #E4C87E); }
+.disciple-bar.is-low .disciple-bar-fill { background: linear-gradient(90deg, #8E3B34, #C86A60); }
+.disciple-bar.is-low b { color: #9B3F37; }
+
+.disciple-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: var(--s3);
+}
+.disciple-btn {
+  min-height: 34px;
+  padding: 4px 2px;
+  border-radius: var(--r1);
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: var(--ink-800);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .9), rgba(244, 238, 224, .7));
+  box-shadow: inset 0 0 0 1px rgba(60, 50, 30, .14);
+  transition: transform .12s ease, box-shadow .18s ease;
+}
+.disciple-btn:active { transform: translateY(1px) scale(.98); }
+.disciple-btn.is-primary {
+  color: #241B03;
+  background: linear-gradient(180deg, #F3DFA4 0%, var(--gold-2) 40%, var(--gold) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 2px 8px rgba(196, 153, 47, .3);
+}
+.disciple-recruit { margin-top: var(--s3); }
+
+@media (max-width: 360px) {
+  .disciple-actions { grid-template-columns: repeat(2, 1fr); }
+  .npc-row { grid-template-columns: auto 1fr; grid-template-areas: "title name" "badge badge" "line line"; }
+  .npc-badge { text-align: left; }
+}
