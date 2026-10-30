@@ -49,6 +49,7 @@ vm.runInThisContext(loadFile('js/save.js'), { filename: 'save.js' });
 vm.runInThisContext(loadFile('js/engine.js'), { filename: 'engine.js' });
 vm.runInThisContext(loadFile('js/features.js'), { filename: 'features.js' });
 vm.runInThisContext(loadFile('js/systems.js'), { filename: 'systems.js' });
+vm.runInThisContext(loadFile('js/sect.js'), { filename: 'sect.js' });
 
 // === 测试框架 ===
 let totalTests = 0, passedTests = 0, failedTests = 0;
@@ -1111,6 +1112,256 @@ test('手动存档重新夺回写入权', () => {
   SaveSystem.reclaimWriter();
   assert(!SaveSystem._autoSaveDisabled, '应恢复自动存档');
   assertEq(localStorage.getItem(SaveSystem.WRITER_KEY), SaveSystem._tabId, '写入者应改回本页');
+});
+
+// ===========================
+// 16. 宗门与秘境（MECH-021 / MECH-022）
+// ===========================
+console.log('\n=== 16. 宗门与秘境 ===');
+
+function freshSectState(realm) {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = realm || 2;
+  GameEngine.state.level = 1;
+  GameEngine.state.stone = 5000;
+  GameEngine.state.spiritSense = 15;
+  GameEngine.state.mana = 200;
+  GameEngine.state.health = 100;
+  GameEngine.state.cultivation = 0;
+  SectSystem.ensure();
+  DelveSystem.ensure();
+}
+
+test('未达筑基不能入宗', () => {
+  freshSectState(1);
+  assert(!SectSystem.canJoin, '练气期不应可入宗');
+  const r = SectSystem.join();
+  assert(!r.ok, '应拒绝入宗');
+});
+
+test('筑基后可入宗，职位为外门弟子', () => {
+  freshSectState(2);
+  assert(SectSystem.canJoin, '筑基应可入宗');
+  const r = SectSystem.join();
+  assert(r.ok, '入宗应成功');
+  assertEq(SectSystem.rankDef.name, '外门弟子');
+  assertEq(SectSystem.maxTier, 1, '外门只能进第 1 层秘境');
+});
+
+test('供奉扣灵石、加贡献', () => {
+  freshSectState(2);
+  SectSystem.join();
+  const stone0 = GameEngine.state.stone;
+  const r = SectSystem.offer(1);
+  assert(r.ok, '供奉应成功');
+  assertEq(GameEngine.state.stone, stone0 - GameConfig.sect.offeringStone, '应扣灵石');
+  assertEq(SectSystem.data.contrib, GameConfig.sect.offeringContrib, '应加贡献');
+});
+
+test('供奉有每日贡献上限', () => {
+  freshSectState(2);
+  SectSystem.join();
+  const cap = GameConfig.sect.dailyContribCap;
+  const times = Math.ceil(cap / GameConfig.sect.offeringContrib) + 3;
+  for (let i = 0; i < times; i++) SectSystem.offer(1);
+  assert(SectSystem.data.contribToday <= cap, `今日贡献不应超过 ${cap}，实际 ${SectSystem.data.contribToday}`);
+});
+
+test('贡献达标自动晋升并解锁更深秘境', () => {
+  freshSectState(2);
+  SectSystem.join();
+  SectSystem.data.contrib = 0;
+  // 直接给够贡献再走一次供奉触发晋升判定
+  SectSystem.data.contrib = GameConfig.sect.ranks[2].contrib;
+  SectSystem.data.contribToday = 0;
+  SectSystem.offer(1);
+  assertEq(SectSystem.data.rank, 2, '应晋升到真传弟子');
+  assertEq(SectSystem.maxTier, 3, '真传可进第 3 层');
+});
+
+test('每日可领秘境令，且一天只能领一次', () => {
+  freshSectState(2);
+  SectSystem.join();
+  const r1 = SectSystem.claimDailyTokens();
+  assert(r1.ok, '首次领取应成功');
+  assertEq(SectSystem.data.tokens, GameConfig.sect.tokenDaily);
+  const r2 = SectSystem.claimDailyTokens();
+  assert(!r2.ok, '同日重复领取应被拒');
+});
+
+test('无秘境令不能进入', () => {
+  freshSectState(2);
+  SectSystem.join();
+  SectSystem.data.tokens = 0;
+  const r = DelveSystem.enter(1);
+  assert(!r.ok, '无令应拒绝');
+  assert(/秘境令/.test(r.msg), `提示应提到秘境令，实际：${r.msg}`);
+});
+
+test('进入秘境扣令并初始化局内状态', () => {
+  freshSectState(2);
+  SectSystem.join();
+  SectSystem.data.tokens = 2;
+  const r = DelveSystem.enter(1);
+  assert(r.ok, '应成功进入');
+  assertEq(SectSystem.data.tokens, 1, '应扣 1 枚令');
+  assert(DelveSystem.active, '应处于探索中');
+  assertEq(DelveSystem.data.floor, 1, '从第 1 层开始');
+  assertEq(DelveSystem.data.doors.length, 3, '应有三个门可选');
+  assertEq(DelveSystem.data.hp, GameEngine.state.health, '气血应满');
+});
+
+test('三个门的类型互不相同（可读的随机性）', () => {
+  freshSectState(2);
+  SectSystem.join();
+  SectSystem.data.tokens = 1;
+  for (let i = 0; i < 20; i++) {
+    DelveSystem.data.active = false;
+    DelveSystem.data.tokens = SectSystem.data.tokens;
+    SectSystem.data.tokens = 1;
+    DelveSystem.enter(1);
+    const kinds = DelveSystem.data.doors.map(d => d.kind);
+    assertEq(new Set(kinds).size, 3, `三个门应各不相同，实际 ${kinds.join(',')}`);
+  }
+});
+
+test('灵机门必成并产出战利品', () => {
+  freshSectState(2);
+  SectSystem.join();
+  SectSystem.data.tokens = 1;
+  DelveSystem.enter(1);
+  const idx = DelveSystem.data.doors.findIndex(d => d.kind === 'spirit');
+  const r = DelveSystem.choose(idx);
+  assert(r.ok && r.success, '灵机应必定成功');
+  const loot = DelveSystem.data.loot;
+  assert((loot.stone || 0) > 0, '应获得灵石');
+});
+
+test('妖兽门成功率随层数下降', () => {
+  freshSectState(2);
+  const p1 = DelveSystem.successChance(1, 1, 0);
+  const p5 = DelveSystem.successChance(5, 1, 0);
+  assert(p1 > p5, `深层成功率应更低：${p1.toFixed(2)} vs ${p5.toFixed(2)}`);
+  const pTaint = DelveSystem.successChance(1, 1, 0.3);
+  assert(pTaint < p1, '浊气应降低成功率');
+});
+
+test('主动撤离：战利品全额入账', () => {
+  freshSectState(2);
+  SectSystem.join();
+  SectSystem.data.tokens = 1;
+  DelveSystem.enter(1);
+  const idx = DelveSystem.data.doors.findIndex(d => d.kind === 'spirit');
+  DelveSystem.choose(idx);
+  const bag = { ...DelveSystem.data.loot };
+  const stone0 = GameEngine.state.stone;
+  const r = DelveSystem.withdraw();
+  assert(r.ok, '撤离应成功');
+  assertEq(GameEngine.state.stone - stone0, bag.stone || 0, '灵石应全额入账');
+  assert(!DelveSystem.active, '应退出探索');
+});
+
+test('气血归零 → 重伤：只保一半战利品并留下伤势', () => {
+  freshSectState(2);
+  SectSystem.join();
+  SectSystem.data.tokens = 1;
+  DelveSystem.enter(1);
+  // 先把战利品堆起来
+  DelveSystem.data.loot = { stone: 100 };
+  DelveSystem.data.hp = 1;
+
+  const origRandom = Math.random;
+  Math.random = () => 0.99;              // 强制失败
+  const idx = DelveSystem.data.doors.findIndex(d => d.kind === 'beast');
+  const stone0 = GameEngine.state.stone;
+  const r = DelveSystem.choose(idx >= 0 ? idx : 0);
+  Math.random = origRandom;
+
+  assert(r.maimed, '应变判定为重伤');
+  assert(!DelveSystem.active, '应退出探索');
+  assertEq(GameEngine.state.stone - stone0, 50, '应只带回一半');
+  assert(DelveSystem.hasInjury(), '应留下伤势');
+});
+
+test('伤势降低修炼速率，疗伤可清除', () => {
+  freshSectState(2);
+  GameEngine.state.stone = 5000;
+  GameEngine.state.injuryUntil = Date.now() + 600 * 1000;
+  assert(DelveSystem.hasInjury(), '应有伤势');
+  assertClose(DelveSystem.ratePenalty, 1 - GameConfig.delve.injuryRatePenalty, 0.001);
+
+  const stone0 = GameEngine.state.stone;
+  const r = DelveSystem.heal();
+  assert(r.ok, '疗伤应成功');
+  assert(!DelveSystem.hasInjury(), '伤势应清除');
+  assertEq(GameEngine.state.stone, stone0 - GameConfig.sect.healCostStone, '应扣灵石');
+});
+
+test('走完全部层数自动结算', () => {
+  freshSectState(2);
+  SectSystem.join();
+  SectSystem.data.tokens = 1;
+  DelveSystem.enter(1);
+  const tier = GameConfig.delve.tiers[0];
+
+  // 一路选灵机（必成、不掉血），直到走完
+  for (let guard = 0; guard < 20 && DelveSystem.active; guard++) {
+    const idx = DelveSystem.data.doors.findIndex(d => d.kind === 'spirit');
+    DelveSystem.choose(idx >= 0 ? idx : 0);
+  }
+  assert(!DelveSystem.active, '应已结算');
+  assert(DelveSystem.data.bestFloor >= tier.floors, '最深记录应达末层');
+});
+
+test('秘境产出折算宗门贡献', () => {
+  freshSectState(2);
+  SectSystem.join();
+  SectSystem.data.tokens = 1;
+  DelveSystem.enter(1);
+  const c0 = SectSystem.data.contrib;
+  const idx = DelveSystem.data.doors.findIndex(d => d.kind === 'spirit');
+  DelveSystem.choose(idx);
+  DelveSystem.withdraw();
+  assert(SectSystem.data.contrib > c0, '应获得贡献');
+});
+
+test('进行中的秘境可从存档恢复', () => {
+  freshSectState(2);
+  SectSystem.join();
+  SectSystem.data.tokens = 1;
+  DelveSystem.enter(1);
+  const snapshot = JSON.parse(JSON.stringify(GameEngine.state));
+  const restored = SaveSystem._ensureShape(snapshot);
+  assert(restored.delve.active, '进行中状态应保留');
+  assertEq(restored.delve.doors.length, 3, '门选项应保留');
+});
+
+test('存档里 active 但没有门 → 判定为未开始', () => {
+  const dirty = SaveSystem.createDefault();
+  dirty.delve.active = true;
+  dirty.delve.doors = [];
+  const fixed = SaveSystem._ensureShape(dirty);
+  assert(!fixed.delve.active, '应修正为未开始，避免卡死在空秘境');
+});
+
+test('职位不足时无法进入高层秘境', () => {
+  freshSectState(2);
+  SectSystem.join();
+  SectSystem.data.tokens = 5;
+  SectSystem.data.rank = 0;
+  const r = DelveSystem.enter(3);
+  assert(!r.ok, '外门弟子不应能进第 3 层');
+});
+
+test('同门榜包含自己且按分数排序', () => {
+  freshSectState(2);
+  SectSystem.join();
+  DelveSystem.data.bestFloor = 6;
+  const board = SectSystem.board;
+  assert(board.some(r => r.self), '榜单应包含自己');
+  for (let i = 1; i < board.length; i++) {
+    assert(board[i - 1].score >= board[i].score, '应按分数降序');
+  }
 });
 
 // ===========================

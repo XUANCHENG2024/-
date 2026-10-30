@@ -905,6 +905,118 @@ const UI = {
           break;
         }
 
+        // === 宗门 ===
+        case 'sect-join': {
+          const r = SectSystem.join();
+          if (r.ok) {
+            this.showToast('已入宗门，外门弟子');
+            SoundFX.play('breakthrough'); Haptic.success();
+            if (typeof CharacterVoice !== 'undefined') CharacterVoice.say('sect', 200);
+            this._sectCache = {};
+            this._needsFullRebuild = true;
+          } else {
+            this.showToast(r.msg);
+            SoundFX.play('deny');
+          }
+          break;
+        }
+        case 'sect-offer': {
+          const r = SectSystem.offer(1);
+          if (r.ok) {
+            this.showToast(`供奉已纳，贡献 +${r.contrib}`);
+            if (r.promoted) {
+              this.showToast(`晋升 ${r.promoted.name}，可入更深秘境`);
+              SoundFX.play('breakthrough'); Haptic.heavy();
+            }
+            SoundFX.play('click');
+            this._sectCache = {};
+          } else {
+            this.showToast(r.msg);
+            SoundFX.play('deny');
+          }
+          break;
+        }
+        case 'sect-claim': {
+          const r = SectSystem.claimDailyTokens();
+          if (r.ok) {
+            this.showToast(`领到秘境令 ×${r.amount}`);
+            SoundFX.play('harvest'); Haptic.light();
+            this._sectCache = {};
+          } else {
+            this.showToast(r.msg);
+          }
+          break;
+        }
+        case 'sect-buytoken': {
+          const r = SectSystem.buyToken();
+          this.showToast(r.ok ? '换得秘境令 ×1' : r.msg);
+          if (r.ok) { SoundFX.play('click'); this._sectCache = {}; }
+          else SoundFX.play('deny');
+          break;
+        }
+        case 'sect-heal': {
+          const r = DelveSystem.heal();
+          this.showToast(r.ok ? '伤势已愈' : r.msg);
+          if (r.ok) { SoundFX.play('craft_done'); Haptic.success(); this._sectCache = {}; }
+          else SoundFX.play('deny');
+          break;
+        }
+
+        // === 秘境 ===
+        case 'delve-enter': {
+          const tierId = parseInt(btn.dataset.index, 10);
+          const r = DelveSystem.enter(tierId);
+          if (r.ok) {
+            this.showToast(`进入${r.tier.name}`);
+            SoundFX.play('visitor'); Haptic.light();
+            DailyGoals.increment('delve');
+            if (typeof CharacterVoice !== 'undefined') CharacterVoice.say('enterRealm', 300);
+            this._sectCache = {};
+            this._needsFullRebuild = true;
+          } else {
+            this.showToast(r.msg);
+            SoundFX.play('deny');
+          }
+          break;
+        }
+        case 'delve-choose': {
+          const r = DelveSystem.choose(index);
+          if (!r.ok) { this.showToast(r.msg); SoundFX.play('deny'); break; }
+
+          if (r.maimed) {
+            this.showToast(`重伤退出！保住一半战利品，留下伤势`);
+            SoundFX.play('deny'); Haptic.heavy();
+            if (typeof CharacterVoice !== 'undefined') CharacterVoice.say('hurt', 300);
+            this._summarizeDelve(r);
+          } else if (r.cleared) {
+            this.showToast(`秘境圆满，第 ${r.floor} 层收功`);
+            SoundFX.play('breakthrough'); Haptic.heavy();
+            this._summarizeDelve(r);
+          } else if (r.success) {
+            SoundFX.play('harvest'); Haptic.light();
+          } else {
+            SoundFX.play('deny'); Haptic.medium();
+          }
+          this._sectCache = {};
+          this._hudCache = {};
+          this._needsFullRebuild = true;
+          break;
+        }
+        case 'delve-withdraw': {
+          const r = DelveSystem.withdraw();
+          if (r.ok) {
+            this.showToast(`撤出秘境，第 ${r.floor} 层止步`);
+            SoundFX.play('harvest'); Haptic.success();
+            this._summarizeDelve(r);
+            this._sectCache = {};
+            this._hudCache = {};
+            this._needsFullRebuild = true;
+          } else {
+            this.showToast(r.msg);
+          }
+          break;
+        }
+
         // 突破
         case 'breakthrough': {
           const btResult = GameEngine.tryBreakthrough();
@@ -944,6 +1056,28 @@ const UI = {
     document.getElementById('modal-overlay').hidden = false;
   },
 
+  /** 秘境结算汇总：把战利品摊开给玩家看，否则"带走了一半"没有实感 */
+  _summarizeDelve(r) {
+    const loot = r.loot || {};
+    const nameMap = {
+      stone: '灵石', herb: '灵草', ore: '矿石', dew: '凝露',
+      breakthroughPill: '破障丹', cultivationPill: '聚气丹', contrib: '宗门贡献',
+    };
+    const rows = Object.entries(loot)
+      .filter(([, v]) => v > 0)
+      .map(([k, v]) => `<div class="gain-row"><span>${nameMap[k] || k}</span><b>+${v}</b></div>`);
+
+    const title = r.maimed ? '重伤退出' : (r.cleared ? '秘境圆满' : '撤出秘境');
+    const head = r.maimed
+      ? `止步第 ${r.floor} 层，战利品只带回一半，需静养 ${Math.round((r.injurySeconds || 0) / 60)} 分钟`
+      : `止步第 ${r.floor} 层`;
+
+    this.showModal(title, `
+      <p class="delve-sum-lead">${head}</p>
+      <div class="offline-gains">${rows.join('') || '<div class="gain-row"><span>空手而归</span><b>—</b></div>'}</div>
+    `);
+  },
+
   showOfflineGains(gains) {
     if (!gains) return;
     // 180 分钟这种读法不直观，超过 1 小时按 时/分 拆开
@@ -968,8 +1102,7 @@ const UI = {
     this._pendingOfflineGains = gains;
   },
 
-  _claimOfflineGains() {
-    const gains = this._pendingOfflineGains;
+  _claimOfflineGains() {    const gains = this._pendingOfflineGains;
     if (!gains) return;
 
     const s = GameEngine.state;
@@ -1359,4 +1492,204 @@ UI.refreshAll = function(force) {
   this.refreshDaily(rebuild);
   this.refreshPets(rebuild);
   this.refreshTechniques(rebuild);
+  this.refreshSect(rebuild);
+};
+
+// ============================
+// 宗门 · 秘境（MECH-021 / MECH-022）
+// ============================
+UI.refreshSect = function (force) {
+  const panel = document.getElementById('panel-sect');
+  if (!panel) return;
+
+  const d = SectSystem.data;
+  const cache = this._sectCache || (this._sectCache = {});
+
+  // —— 入宗前 ——
+  const gate = document.getElementById('sect-gate');
+  const body = document.getElementById('sect-body');
+  if (gate && body) {
+    const showGate = !d.joined;
+    if (cache.showGate !== showGate) {
+      cache.showGate = showGate;
+      gate.hidden = !showGate;
+      body.hidden = showGate;
+    }
+    if (showGate) {
+      const txt = document.getElementById('sect-gate-text');
+      const realmOk = GameEngine.state.realm >= GameConfig.sect.joinRealm;
+      const text = realmOk
+        ? '你已筑基，可投帖入宗。宗门每旬发放秘境令，职位越高，能进的秘境越深。'
+        : `需筑基以上方可入宗（当前 ${GameConfig.realmNames[GameEngine.state.realm - 1]}）`;
+      if (txt && txt.textContent !== text) txt.textContent = text;
+      const btn = document.getElementById('btn-sect-join');
+      if (btn && btn.disabled !== !realmOk) {
+        btn.disabled = !realmOk;
+        btn.classList.toggle('is-off', !realmOk);
+      }
+    }
+  }
+
+  // —— 入宗后 ——
+  if (d.joined) {
+    const put = (id, val) => {
+      if (cache[id] === val) return;
+      cache[id] = val;
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    };
+    put('sect-rank-name', SectSystem.rankDef.name);
+    put('sect-contrib', `贡献 ${d.contrib}`);
+    put('sect-tokens', d.tokens);
+
+    const need = SectSystem.nextRankNeed;
+    const nextDef = GameConfig.sect.ranks[d.rank + 1];
+    put('sect-next', need === null
+      ? '已至最高职位'
+      : `距${nextDef.name}还差 ${need} 贡献`);
+
+    // 进度条：当前职位到下一职位之间的完成度
+    const cur = GameConfig.sect.ranks[d.rank].contrib;
+    const nxt = nextDef ? nextDef.contrib : cur;
+    const pct = nxt > cur ? ((d.contrib - cur) / (nxt - cur) * 100) : 100;
+    const pctStr = Math.max(0, Math.min(100, pct)).toFixed(0) + '%';
+    if (cache.sectBar !== pctStr) {
+      cache.sectBar = pctStr;
+      const bar = document.getElementById('sect-bar-fill');
+      if (bar) bar.style.width = pctStr;
+    }
+
+    // 疗伤按钮：仅在有伤势时出现
+    const healBtn = document.getElementById('btn-sect-heal');
+    const injured = DelveSystem.hasInjury();
+    if (healBtn && cache.injured !== injured) {
+      cache.injured = injured;
+      healBtn.hidden = !injured;
+    }
+
+    // 同门榜
+    const board = document.getElementById('sect-board');
+    const rows = SectSystem.board;
+    const sig = rows.map(r => `${r.name}${r.score}${r.self ? '*' : ''}`).join('|');
+    if (board && cache.boardSig !== sig) {
+      cache.boardSig = sig;
+      board.innerHTML = rows.map((r, i) => `
+        <li class="${r.self ? 'is-self' : ''}">
+          <span class="rank-no">${i + 1}</span>
+          <span class="rank-name">${r.name}</span>
+          <span class="rank-score">${r.score} 层</span>
+        </li>`).join('');
+    }
+  }
+
+  // —— 秘境 ——
+  this._refreshDelve(force);
+};
+
+UI._refreshDelve = function (force) {
+  const d = DelveSystem.data;
+  const cache = this._sectCache || (this._sectCache = {});
+
+  const powerEl = document.getElementById('delve-power');
+  if (powerEl) {
+    const t = `战力 ${DelveSystem.power}`;
+    if (cache.power !== t) { cache.power = t; powerEl.textContent = t; }
+  }
+
+  const entries = document.getElementById('delve-entries');
+  const run = document.getElementById('delve-run');
+  if (!entries || !run) return;
+
+  const active = d.active;
+
+  // 状态切换：入口列表 / 局内界面
+  if (cache.delveActive !== active) {
+    cache.delveActive = active;
+    entries.hidden = active;
+    run.hidden = !active;
+  }
+
+  if (active) {
+    const snap = DelveSystem.snapshot;
+    const set = (id, val) => {
+      if (cache[id] === val) return;
+      cache[id] = val;
+      const el = document.getElementById(id);
+      if (el) el.textContent = val;
+    };
+    set('delve-floor', `第 ${snap.floor} 层 / ${snap.floors}`);
+    set('delve-hp', `${snap.hp}/${snap.hpMax}`);
+    const taintPct = Math.round(snap.taint * 100);
+    set('delve-hint', `浊气 ${taintPct}% · 硬闯成功率 ${Math.round(snap.success * 100)}%`);
+
+    const hpPct = Math.max(0, snap.hp / snap.hpMax * 100).toFixed(0) + '%';
+    if (cache.delveHp !== hpPct) {
+      cache.delveHp = hpPct;
+      const f = document.getElementById('delve-hp-fill');
+      if (f) f.style.width = hpPct;
+    }
+    const taintW = Math.min(100, snap.taint / GameConfig.delve.taintCap * 100).toFixed(0) + '%';
+    if (cache.delveTaint !== taintW) {
+      cache.delveTaint = taintW;
+      const f = document.getElementById('delve-taint-fill');
+      if (f) f.style.width = taintW;
+    }
+
+    // 三道门
+    const doorsEl = document.getElementById('delve-doors');
+    const doorSig = `f${snap.floor}|` + snap.doors.map(x => `${x.kind}${x.manaCost}`).join(',');
+    if (doorsEl && cache.doorSig !== doorSig) {
+      cache.doorSig = doorSig;
+      doorsEl.innerHTML = snap.doors.map((door, i) => {
+        const riskStars = '★'.repeat(door.risk) + '☆'.repeat(3 - door.risk);
+        const manaHint = door.manaCost ? `<em>耗法力 ${door.manaCost}</em>` : '';
+        return `
+          <button class="delve-door delve-door--${door.kind}" data-action="delve-choose" data-index="${i}">
+            <span class="door-icon">${door.icon}</span>
+            <span class="door-name">${door.name}</span>
+            <span class="door-risk">${riskStars}</span>
+            <span class="door-desc">${door.desc}</span>
+            <span class="door-preview">${door.preview}${manaHint}</span>
+          </button>`;
+      }).join('');
+    }
+  } else {
+    // 入口：按职位解锁的层级
+    const entrySig = `r${GameEngine.state.realm}|k${SectSystem.data.tokens}|t${SectSystem.maxTier}|j${SectSystem.data.joined}`;
+    if (entries && (force || cache.entrySig !== entrySig)) {
+      cache.entrySig = entrySig;
+      entries.innerHTML = GameConfig.delve.tiers.map(t => {
+        const unlocked = SectSystem.data.joined && t.id <= SectSystem.maxTier;
+        const check = DelveSystem.canEnter(t.id);
+        const reason = unlocked ? (check.ok ? '' : check.msg) : '职位不足';
+        return `
+          <button class="delve-entry ${unlocked ? '' : 'is-locked'} ${check.ok ? '' : 'is-off'}"
+                  data-action="delve-enter" data-index="${t.id}">
+            <span class="entry-name">${t.name}</span>
+            <span class="entry-desc">${t.desc}</span>
+            <span class="entry-meta">${t.floors} 层 · 收益 ×${t.rewardMult}${reason ? ` · ${reason}` : ''}</span>
+          </button>`;
+      }).join('');
+    }
+  }
+
+  // 战报
+  const logEl = document.getElementById('delve-log');
+  const logs = DelveSystem.data.log || [];
+  const logSig = logs.map(l => `${l.floor}${l.success ? 1 : 0}`).join(',');
+  if (logEl && cache.logSig !== logSig) {
+    cache.logSig = logSig;
+    logEl.innerHTML = logs.slice(0, 4).map(l => `
+      <div class="delve-log-row ${l.success ? 'ok' : 'bad'}">
+        <span>${l.floor} 层</span>
+        <span>${l.text}</span>
+      </div>`).join('');
+  }
+
+  // 导航徽标：有未领令牌或伤势时提示
+  const badge = document.getElementById('sect-badge');
+  if (badge) {
+    const hint = d.joined && (SectSystem.canClaimTokensToday() || DelveSystem.hasInjury());
+    if (cache.badge !== hint) { cache.badge = hint; badge.hidden = !hint; }
+  }
 };

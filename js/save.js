@@ -55,6 +55,34 @@ const SaveSystem = {
       })),
       // 炼丹队列
       craftingQueue: [],
+      // 伤势（秘境重伤后生效，降低修炼速率）
+      injuryUntil: 0,
+      // 宗门（MECH-021）
+      sect: {
+        joined: false,
+        contrib: 0,
+        rank: 0,
+        tokens: 0,
+        tokenDate: '',
+        contribDate: '',
+        contribToday: 0,
+        offeringCount: 0,
+      },
+      // 秘境（MECH-022）
+      delve: {
+        active: false,
+        tier: 1,
+        floor: 0,
+        hp: 0,
+        hpMax: 1,
+        taint: 0,
+        loot: {},
+        doors: [],
+        log: [],
+        bestFloor: 0,
+        runs: 0,
+        deaths: 0,
+      },
     };
   },
 
@@ -173,6 +201,23 @@ const SaveSystem = {
         timeRemaining: Math.max(0, Number(j.timeRemaining) || 0),
         totalTime: Math.max(1, Number(j.totalTime) || 1),
       }));
+
+    // 伤势时间戳
+    out.injuryUntil = Math.max(0, Number(out.injuryUntil) || 0);
+
+    // 宗门结构
+    if (!out.sect || typeof out.sect !== 'object') out.sect = base.sect;
+    out.sect = { ...base.sect, ...out.sect };
+    out.sect.rank = Math.min(Math.max(0, Number(out.sect.rank) || 0), GameConfig.sect.ranks.length - 1);
+
+    // 秘境结构：进行中的探险也要能续上，否则刷新页面就白丢一次门票
+    if (!out.delve || typeof out.delve !== 'object') out.delve = base.delve;
+    out.delve = { ...base.delve, ...out.delve };
+    if (!out.delve.loot || typeof out.delve.loot !== 'object') out.delve.loot = {};
+    if (!Array.isArray(out.delve.doors)) out.delve.doors = [];
+    if (!Array.isArray(out.delve.log)) out.delve.log = [];
+    // 没有门却标记为进行中，说明存档被截断，直接判为未开始
+    if (out.delve.active && out.delve.doors.length === 0) out.delve.active = false;
 
     return out;
   },

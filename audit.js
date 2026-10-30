@@ -31,7 +31,7 @@ const document = W.document;
 W.AudioContext = undefined;
 W.navigator.vibrate = () => {};
 
-for (const s of ['config.js', 'save.js', 'engine.js', 'features.js', 'systems.js', 'ui.js']) {
+for (const s of ['config.js', 'save.js', 'engine.js', 'features.js', 'systems.js', 'sect.js', 'ui.js']) {
   const el = document.createElement('script');
   el.textContent = fs.readFileSync(path.join(__dirname, 'js', s), 'utf8');
   document.body.appendChild(el);
@@ -46,7 +46,10 @@ const VisitorSystem = G('VisitorSystem');
 const PetSystem = G('PetSystem');
 const TechniqueSystem = G('TechniqueSystem');
 const WeatherSystem = G('WeatherSystem');
+const SectSystem = G('SectSystem');
+const DelveSystem = G('DelveSystem');
 const calcQ = G('calcQ');
+const getStatThresholds = G('getStatThresholds');
 const calcRate = G('calcRate');
 const GameConfig = G('GameConfig');
 
@@ -666,4 +669,81 @@ log('\n═══ K · 音频资源 ═══');
   R.audioDisconnects = disconnects;
   log(`  白噪声缓冲复用：${noiseCached ? '有' : '无（每次出剑新建 AudioBuffer）'}`);
   log(`  节点播后断开：${disconnects ? '有' : '无（连发时节点积压）'}`);
+}
+// ============================================================
+// L. 宗门 · 秘境（MECH-021 / MECH-022）
+// ============================================================
+log('\n═══ L · 宗门与秘境 ═══');
+{
+  const sectCfg = GameConfig.sect;
+
+  // L1 宗门是否构成真实的灵石消耗口
+  const dailyStoneSink = (sectCfg.dailyContribCap / sectCfg.offeringContrib) * sectCfg.offeringStone;
+  R.sectDailySink = dailyStoneSink;
+  const herbPerHour = (GameConfig.crops[0].yield - GameConfig.crops[0].seedCost) / GameConfig.crops[0].growthTime * 3600;
+  const stonePerHour = herbPerHour * GameConfig.maxPlots * (GameConfig.shop.sell[0].price / GameConfig.shop.sell[0].amount);
+  R.sectSinkHours = +(dailyStoneSink / stonePerHour).toFixed(2);
+  log(`  宗门每日供奉上限可吸灵石 ${dailyStoneSink}（≈满级灵田 ${R.sectSinkHours} 小时的产出）`);
+
+  // L2 各境界 × 各层级的硬闯成功率，找出"永远打不过"或"永远无风险"的死区
+  const grid = [];
+  for (let r = 1; r <= 6; r++) {
+    const st = SaveSystem.createDefault();
+    st.realm = r;
+    const th = getStatThresholds(r);
+    st.spiritSense = th.sense;
+    st.health = th.hp;
+    st.mana = th.mana;
+    GameEngine.state = st;
+    const row = { realm: r, power: DelveSystem.power, tiers: [], raw: [] };
+    for (const t of GameConfig.delve.tiers) {
+      const pMid = DelveSystem.successChance(Math.ceil(t.floors / 2), t.id, 0.15);
+      const pEnd = DelveSystem.successChance(t.floors, t.id, GameConfig.delve.taintCap * 0.6);
+      row.tiers.push(`${t.name.slice(0, 2)} ${Math.round(pMid * 100)}%/${Math.round(pEnd * 100)}%`);
+      row.raw.push([pMid, pEnd]);
+    }
+    grid.push(row);
+  }
+  R.delveGrid = grid;
+  log('  硬闯成功率（中层 / 末层）：');
+  grid.forEach(g => log(`    R${g.realm} 战力${String(g.power).padStart(4)}  ${g.tiers.join('  ')}`));
+
+  let dead = 0, trivial = 0;
+  grid.forEach(g => {
+    for (const pair of g.raw) {
+      if (pair.every(n => n <= 0.15 + 1e-9)) dead++;
+      if (pair.every(n => n >= 0.95 - 1e-9)) trivial++;
+    }
+  });
+  R.delveDeadCells = dead;
+  R.delveTrivialCells = trivial;
+  log(`  死区（成功率恒 ≤15%）：${dead} 格 · 无风险（恒 ≥95%）：${trivial} 格`);
+
+  // L3 伤势是否真的影响修炼速率
+  const st2 = SaveSystem.createDefault();
+  st2.realm = 3;
+  GameEngine.state = st2;
+  const normalPenalty = DelveSystem.ratePenalty;
+  st2.injuryUntil = Date.now() + 60 * 1000;
+  const injuredPenalty = DelveSystem.ratePenalty;
+  R.injuryWorks = normalPenalty > injuredPenalty;
+  log(`  伤势对修炼速率：正常 x${normalPenalty} → 受伤 x${injuredPenalty} ${R.injuryWorks ? '（生效）' : '（未生效）'}`);
+  st2.injuryUntil = 0;
+
+  // L4 秘境单局收益折算成"多少分钟灵田收入"
+  const tier1 = GameConfig.delve.tiers[0];
+  const runStone = Array.from({ length: tier1.floors }, (_, i) =>
+    GameConfig.delve.baseStone * tier1.rewardMult * (1 + GameConfig.delve.floorGrow * i)
+  ).reduce((a, b) => a + b, 0) * 0.85;
+  R.delveRunStone = Math.round(runStone);
+  R.delveRunMinutes = +(runStone / stonePerHour * 60).toFixed(1);
+  log(`  荒尘秘境满层约 ${Math.round(runStone)} 灵石 ≈ ${(runStone / stonePerHour * 60).toFixed(1)} 分钟满级灵田收入（每日 3 枚令）`);
+
+  // L5 存档自愈
+  const dirty = SaveSystem.createDefault();
+  dirty.delve.active = true;
+  dirty.delve.doors = [];
+  const fixed = SaveSystem._ensureShape(dirty);
+  R.delveSaveSanitized = !fixed.delve.active;
+  log(`  存档自愈（active 但无门 → 置为未开始）：${R.delveSaveSanitized ? '有' : '无'}`);
 }

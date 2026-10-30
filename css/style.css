@@ -3901,3 +3901,349 @@ body {
   .sword-dummy.holding::after,
   .btn-sword.holding::after { animation: none; opacity: .7; }
 }
+
+/* ============================================================
+   宗门 · 秘境（MECH-021 / MECH-022）
+   宗门：浅宣纸底，与既有面板一致——它是"日常所在"
+   秘境：深墨底 + 金色描边——进门就是另一个空间，靠明度差拉开层次
+   ============================================================ */
+
+/* ---------- 未入宗 ---------- */
+.sect-gate {
+  padding: var(--s5) var(--s4);
+  border-radius: var(--r3);
+  background:
+    radial-gradient(120% 100% at 50% 0%, rgba(228, 200, 126, .18), transparent 60%),
+    linear-gradient(180deg, rgba(255, 255, 255, .6), rgba(249, 244, 232, .35));
+  box-shadow: inset 0 0 0 1px rgba(196, 153, 47, .2), inset 0 1px 0 rgba(255, 255, 255, .7);
+  text-align: center;
+}
+.sect-gate-text {
+  font-size: var(--t-sm);
+  line-height: 1.75;
+  letter-spacing: .02em;
+  color: var(--ink-500);
+  margin-bottom: var(--s4);
+}
+.sect-join-btn {
+  background: linear-gradient(180deg, #F3DFA4 0%, var(--gold-2) 40%, var(--gold) 100%);
+  color: #241B03;
+  border: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 3px 14px rgba(196, 153, 47, .35);
+  max-width: 220px;
+  margin: 0 auto;
+}
+
+/* ---------- 宗门状态 ---------- */
+.sect-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s3);
+}
+.sect-rank { display: flex; align-items: baseline; gap: var(--s3); }
+.sect-rank b {
+  font-family: var(--serif);
+  font-size: var(--t-card);
+  letter-spacing: .12em;
+  color: var(--ink-900);
+}
+.sect-rank span {
+  font-size: var(--t-xs);
+  color: var(--ink-500);
+}
+.sect-token {
+  font-size: var(--t-xs);
+  color: var(--ink-500);
+}
+.sect-token b {
+  font-family: var(--serif);
+  font-size: 1rem;
+  color: var(--gold-700);
+  font-variant-numeric: tabular-nums;
+}
+
+.sect-bar {
+  height: 6px;
+  border-radius: var(--r-full);
+  background: rgba(60, 50, 30, .1);
+  overflow: hidden;
+}
+.sect-bar-fill {
+  height: 100%;
+  width: 0;
+  border-radius: var(--r-full);
+  background: linear-gradient(90deg, rgba(196, 153, 47, .55), rgba(228, 200, 126, .95));
+  transition: width .4s var(--ease-out);
+}
+.sect-next {
+  margin-top: var(--s2);
+  font-size: var(--t-xs);
+  letter-spacing: .02em;
+  color: var(--ink-500);
+}
+
+.sect-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--s3);
+  margin-top: var(--s4);
+}
+.sect-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 50px;
+  padding: 8px 10px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .92), rgba(246, 240, 226, .74));
+  border-radius: var(--r2);
+  box-shadow:
+    inset 0 0 0 1px rgba(60, 50, 30, .14),
+    inset 0 1px 0 rgba(255, 255, 255, .9),
+    0 1px 3px rgba(50, 40, 22, .07);
+  transition: transform .12s ease, box-shadow .18s ease, opacity .18s ease;
+}
+.sect-btn .ico { width: 16px; height: 16px; color: var(--gold-700); flex: 0 0 auto; }
+.sect-btn:active { transform: translateY(1px) scale(.985); }
+.sect-btn.is-off { opacity: .42; pointer-events: none; }
+
+/* ---------- 同门榜 ---------- */
+.sect-board {
+  margin-top: var(--s5);
+  padding-top: var(--s4);
+  border-top: 1px dashed rgba(58, 58, 58, .16);
+}
+.sect-board-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--s2);
+  font-family: var(--serif);
+  font-size: var(--t-card);
+  letter-spacing: .1em;
+  color: var(--ink-900);
+}
+.sect-board-head small {
+  font-family: var(--sans, inherit);
+  font-size: 10px;
+  letter-spacing: .04em;
+  color: var(--ink-500);
+  opacity: .8;
+}
+.sect-board-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sect-board-list li {
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  align-items: center;
+  gap: var(--s2);
+  padding: 5px 6px;
+  border-radius: var(--r1);
+  font-size: var(--t-xs);
+  color: var(--ink-700);
+}
+.sect-board-list li.is-self {
+  background: rgba(196, 153, 47, .12);
+  color: var(--ink-900);
+  font-weight: 600;
+}
+.rank-no {
+  font-family: var(--serif);
+  color: var(--gold-700);
+  text-align: center;
+}
+.rank-score { font-variant-numeric: tabular-nums; color: var(--ink-500); }
+.sect-board-list li.is-self .rank-score { color: var(--gold-700); }
+
+/* ---------- 秘境 ---------- */
+.delve {
+  margin-top: var(--s5);
+  padding: var(--s4);
+  border-radius: var(--r3);
+  background:
+    radial-gradient(110% 80% at 50% -10%, rgba(107, 163, 199, .18), transparent 55%),
+    linear-gradient(180deg, #23262C 0%, #1A1D22 100%);
+  box-shadow:
+    inset 0 0 0 1px rgba(228, 200, 126, .22),
+    inset 0 1px 0 rgba(255, 255, 255, .08),
+    0 4px 18px rgba(14, 16, 20, .28);
+  color: rgba(246, 242, 232, .9);
+}
+.delve-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--s4);
+}
+.delve-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--serif);
+  font-size: var(--t-card);
+  letter-spacing: .16em;
+  color: var(--gold-300);
+}
+.delve-title .ico { width: 16px; height: 16px; }
+.delve-power {
+  font-size: var(--t-xs);
+  letter-spacing: .04em;
+  color: rgba(246, 242, 232, .62);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 入口卡 */
+.delve-entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.delve-entry {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2px;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--r2);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .08), rgba(255, 255, 255, .03));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .1);
+  color: inherit;
+  transition: transform .12s ease, box-shadow .18s ease;
+}
+.delve-entry:active { transform: scale(.99); }
+.delve-entry .entry-name {
+  font-family: var(--serif);
+  font-size: var(--t-sm);
+  letter-spacing: .1em;
+  color: var(--gold-300);
+}
+.delve-entry .entry-desc {
+  font-size: 11px;
+  color: rgba(246, 242, 232, .55);
+}
+.delve-entry .entry-meta {
+  font-size: 11px;
+  color: rgba(246, 242, 232, .45);
+  font-variant-numeric: tabular-nums;
+}
+.delve-entry.is-locked { opacity: .5; }
+.delve-entry.is-off { pointer-events: none; }
+.delve-entry.is-locked .entry-name { color: rgba(246, 242, 232, .6); }
+
+/* 局内 */
+.delve-status {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--s2);
+}
+.delve-floor {
+  font-family: var(--serif);
+  font-size: var(--t-card);
+  letter-spacing: .08em;
+  color: var(--paper-50, #F6F2E8);
+}
+.delve-hp { font-size: var(--t-xs); color: rgba(246, 242, 232, .66); }
+.delve-hp b { font-variant-numeric: tabular-nums; color: var(--cinnabar-300, #E9A79F); }
+
+.delve-bars { display: flex; flex-direction: column; gap: 4px; }
+.delve-bar {
+  height: 5px;
+  border-radius: var(--r-full);
+  background: rgba(255, 255, 255, .1);
+  overflow: hidden;
+}
+.delve-bar-fill { height: 100%; width: 100%; border-radius: var(--r-full); transition: width .3s var(--ease-out); }
+.delve-bar--hp .delve-bar-fill { background: linear-gradient(90deg, #8E3B34, #C86A60); }
+.delve-bar--taint .delve-bar-fill { background: linear-gradient(90deg, rgba(122, 166, 120, .5), rgba(107, 163, 199, .8)); }
+
+.delve-hint {
+  margin: var(--s2) 0 var(--s4);
+  font-size: 11px;
+  letter-spacing: .02em;
+  color: rgba(246, 242, 232, .5);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 三道门 */
+.delve-doors {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s2);
+}
+.delve-door {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 6px;
+  border-radius: var(--r2);
+  text-align: center;
+  color: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .1), rgba(255, 255, 255, .04));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .12);
+  transition: transform .12s ease, box-shadow .2s ease;
+}
+.delve-door:active { transform: translateY(1px) scale(.985); }
+.delve-door--beast { box-shadow: inset 0 0 0 1px rgba(200, 106, 96, .4); }
+.delve-door--trove { box-shadow: inset 0 0 0 1px rgba(228, 200, 126, .42); }
+.delve-door--spirit { box-shadow: inset 0 0 0 1px rgba(122, 166, 120, .4); }
+.door-icon { font-size: 15px; line-height: 1; color: var(--gold-300); }
+.door-name {
+  font-family: var(--serif);
+  font-size: var(--t-xs);
+  letter-spacing: .06em;
+  color: var(--paper-50, #F6F2E8);
+}
+.door-risk { font-size: 10px; letter-spacing: 1px; color: var(--gold-300); }
+.door-desc { font-size: 10px; line-height: 1.35; color: rgba(246, 242, 232, .45); }
+.door-preview {
+  font-size: 10px;
+  color: rgba(246, 242, 232, .7);
+  font-variant-numeric: tabular-nums;
+}
+.door-preview em { display: block; font-style: normal; color: rgba(107, 163, 199, .9); }
+
+.delve-withdraw {
+  margin-top: var(--s3);
+  background: linear-gradient(180deg, rgba(255, 255, 255, .14), rgba(255, 255, 255, .06));
+  color: var(--paper-50, #F6F2E8);
+  box-shadow: inset 0 0 0 1px rgba(228, 200, 126, .3);
+  min-height: 44px;
+}
+.delve-withdraw .ico { color: var(--gold-300); }
+
+/* 战报 */
+.delve-log { margin-top: var(--s3); display: flex; flex-direction: column; gap: 3px; }
+.delve-log-row {
+  display: grid;
+  grid-template-columns: 42px 1fr;
+  gap: var(--s2);
+  font-size: 11px;
+  line-height: 1.5;
+  color: rgba(246, 242, 232, .5);
+}
+.delve-log-row span:first-child { color: rgba(246, 242, 232, .35); font-variant-numeric: tabular-nums; }
+.delve-log-row.ok span:last-child { color: rgba(162, 196, 160, .85); }
+.delve-log-row.bad span:last-child { color: rgba(200, 106, 96, .9); }
+
+.delve-sum-lead {
+  font-size: var(--t-sm);
+  line-height: 1.7;
+  color: var(--ink-700);
+  margin-bottom: var(--s3);
+}
+
+@media (max-width: 360px) {
+  .delve-doors { grid-template-columns: 1fr; }
+  .delve-door { flex-direction: row; justify-content: flex-start; text-align: left; gap: 8px; }
+  .door-desc { display: none; }
+}

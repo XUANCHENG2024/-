@@ -90,6 +90,8 @@ const GameEngine = {
     if (typeof WeatherSystem !== 'undefined') rate *= WeatherSystem.meditationMultiplier;
 
     rate *= this.daoRateMult;
+    // 伤势：秘境重伤后一段时间内修炼效率下降（与秘境形成代价闭环）
+    if (typeof DelveSystem !== 'undefined') rate *= DelveSystem.ratePenalty;
     this.state.cultivation += rate * dt;
     this.state.totalCultivation = (this.state.totalCultivation || 0) + rate * dt;
 
@@ -403,6 +405,7 @@ const GameEngine = {
         if (typeof TechniqueSystem !== 'undefined') rate *= (1 + TechniqueSystem.cultivationRateBonus);
         if (typeof WeatherSystem !== 'undefined') rate *= WeatherSystem.meditationMultiplier;
         rate *= this.daoRateMult;
+        if (typeof DelveSystem !== 'undefined') rate *= DelveSystem.ratePenalty;
 
         const extra = rate * (mult - 1) * dt;
         const cap = calcQ(this.state.realm, this.state.level, 1.0);

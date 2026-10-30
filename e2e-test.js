@@ -29,7 +29,7 @@ W.navigator.vibrate = () => {};
 W.matchMedia = W.matchMedia || (() => ({ matches: false, addListener() {}, removeListener() {} }));
 
 // 逐个注入脚本（作为 <script> 执行，共享全局词法环境）
-const scripts = ['config.js', 'save.js', 'engine.js', 'features.js', 'systems.js', 'ui.js'];
+const scripts = ['config.js', 'save.js', 'engine.js', 'features.js', 'systems.js', 'sect.js', 'ui.js'];
 for (const s of scripts) {
   const code = fs.readFileSync(path.join(__dirname, 'js', s), 'utf8');
   const el = document.createElement('script');
@@ -345,6 +345,84 @@ UI._hudCache = {};
 UI.refreshHUD();
 check('HUD 聚气丹数字正确', document.getElementById('res-pill').textContent === '2');
 check('HUD 破障丹独立显示', document.getElementById('res-pill-po').textContent === '1');
+
+// ===== 10. 宗门 · 秘境（真实点击） =====
+console.log('\n=== 10. 宗门 · 秘境按钮 ===');
+
+const SectSystem = G('SectSystem');
+const DelveSystem = G('DelveSystem');
+
+// 准备：筑基、有灵石、未入宗
+GameEngine.state = SaveSystem.createDefault();
+GameEngine.state.realm = 2;
+GameEngine.state.level = 1;
+GameEngine.state.stone = 2000;
+GameEngine.state.spiritSense = 15;
+GameEngine.state.mana = 200;
+GameEngine.state.health = 100;
+UI._sectCache = {};
+UI.showTab('sect');
+UI.refreshAll(true);
+
+const joinBtn = document.getElementById('btn-sect-join');
+check('宗门面板渲染出「投帖入宗」', !!joinBtn);
+check('入宗按钮带 data-action', joinBtn?.dataset.action === 'sect-join');
+
+clickEl(joinBtn);
+check('点「投帖入宗」→ 已入宗', SectSystem.data.joined === true);
+
+UI._sectCache = {};
+UI.refreshAll(true);
+const offerBtn = document.querySelector('[data-action="sect-offer"]');
+const claimBtn = document.querySelector('[data-action="sect-claim"]');
+check('入宗后出现「供奉」按钮', !!offerBtn);
+check('入宗后出现「领令」按钮', !!claimBtn);
+
+const stoneBefore = GameEngine.state.stone;
+clickEl(offerBtn);
+check('点「供奉」→ 灵石减少', GameEngine.state.stone < stoneBefore,
+  `${stoneBefore} → ${GameEngine.state.stone}`);
+
+clickEl(claimBtn);
+check('点「领令」→ 获得秘境令', SectSystem.data.tokens > 0,
+  `tokens=${SectSystem.data.tokens}`);
+
+// 进入秘境
+UI._sectCache = {};
+UI.refreshAll(true);
+const entryBtn = document.querySelector('[data-action="delve-enter"]');
+check('秘境入口渲染出层级按钮', !!entryBtn);
+clickEl(entryBtn);
+check('点秘境入口 → 进入探索', DelveSystem.active === true);
+check('进入后扣 1 枚令牌', SectSystem.data.tokens >= 0);
+
+// 局内：点一道门
+UI._sectCache = {};
+UI.refreshAll(true);
+const doorBtns = document.querySelectorAll('[data-action="delve-choose"]');
+check('局内渲染出三道门', doorBtns.length === 3, `实际 ${doorBtns.length}`);
+const floorBefore = DelveSystem.data.floor;
+clickEl(doorBtns[0]);
+check('点门 → 层数推进或结算',
+  DelveSystem.data.floor > floorBefore || !DelveSystem.active,
+  `floor ${floorBefore} → ${DelveSystem.data.floor}, active=${DelveSystem.active}`);
+
+// 撤离
+if (DelveSystem.active) {
+  UI._sectCache = {};
+  UI.refreshAll(true);
+  const wBtn = document.querySelector('[data-action="delve-withdraw"]');
+  check('局内出现「见好就收」按钮', !!wBtn);
+  clickEl(wBtn);
+  check('点「见好就收」→ 退出秘境', DelveSystem.active === false);
+}
+
+// 职位不足时入口应被禁用
+SectSystem.data.rank = 0;
+UI._sectCache = {};
+UI.refreshAll(true);
+const locked = document.querySelector('.delve-entry.is-locked');
+check('职位不足的层级显示为锁定', !!locked);
 
 // ===== 汇总 =====
 console.log('\n' + '='.repeat(55));

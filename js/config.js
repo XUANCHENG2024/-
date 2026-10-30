@@ -83,6 +83,51 @@ const GameConfig = {
     divisor: 100,
   },
 
+  // === 宗门（MECH-021）===
+  // 定位：长线 meta 层。提供秘境门票、职位（决定可入秘境层级）、
+  // 以及一个可持续的灵石消耗口（供奉），解决后期灵石无处可花的问题。
+  sect: {
+    joinRealm: 2,               // 筑基方可入宗
+    ranks: [
+      { name: '外门弟子', contrib: 0,    tier: 1 },
+      { name: '内门弟子', contrib: 200,  tier: 2 },
+      { name: '真传弟子', contrib: 600,  tier: 3 },
+      { name: '执事长老', contrib: 1500, tier: 4 },
+    ],
+    offeringStone: 100,         // 供奉：投入灵石换贡献
+    offeringContrib: 10,
+    dailyContribCap: 300,       // 每日贡献上限，防止无限刷
+    tokenDaily: 3,              // 每日可领秘境令
+    tokenCostContrib: 40,       // 额外兑换 1 张秘境令
+    healCostStone: 120,         // 疗伤消耗
+  },
+
+  // === 秘境（MECH-022）===
+  // 定位：单局 roguelike 探险。"探—战—撤"闭环，压力（浊气）随层数递增，
+  // 玩家自己决定何时收手；战力判定复用神识/法力，让突破的属性有了第二个用途。
+  delve: {
+    entryRealm: 2,
+    tiers: [
+      { id: 1, name: '荒尘秘境', desc: '上古宗门试炼场，荒草掩道', threatBase: 16,  rewardMult: 1.0,  floors: 6 },
+      { id: 2, name: '古墟秘境', desc: '断壁残垣间仍有灵机未散',   threatBase: 22,  rewardMult: 2.2,  floors: 7 },
+      { id: 3, name: '神墟秘境', desc: '神纹未朽，法则压制极强',   threatBase: 32, rewardMult: 5.0,  floors: 8 },
+      { id: 4, name: '洪荒禁地', desc: '宗门明令禁止弟子独入',     threatBase: 40, rewardMult: 11.0, floors: 9 },
+    ],
+    threatPerFloor: 0.35,       // 每深一层，威胁按此系数递增
+    taintPerFloor: 0.03,        // 每层累积浊气（直接扣成功率）
+    taintCap: 0.45,
+    successMin: 0.15,
+    successMax: 0.95,
+    hpLossSuccess: 0.06,        // 成功：损失最大气血的 6%
+    hpLossFail: 0.22,           // 失败：22%
+    deathLootKeep: 0.5,         // 重伤时保留一半战利品
+    injurySeconds: 600,         // 伤势持续 10 分钟
+    injuryRatePenalty: 0.25,    // 期间修炼速率 -25%
+    baseStone: 30,              // 单层基础灵石
+    floorGrow: 0.20,            // 每层收益递增
+    contribPerFloor: 6,         // 每层折算宗门贡献
+  },
+
   // === 境界名称 ===
   realmNames: ['练气', '筑基', '金丹', '元婴', '化神', '渡劫'],
 

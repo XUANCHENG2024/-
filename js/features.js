@@ -25,6 +25,7 @@ const DailyGoals = {
     { id: 'breakthrough_1', key: 'breakthrough', type: 'cultivation', name: '突破 1 次',         target: 1,    reward: 100, icon: '⚡' },
     { id: 'sell_5',        key: 'sell',         type: 'economy',     name: '出售 5 份材料',     target: 5,    reward: 25,  icon: '💰' },
     { id: 'collect_10',    key: 'collect',      type: 'economy',     name: '累计获得 10 灵石',  target: 10,   reward: 15,  icon: '💎' },
+    { id: 'delve_1',       key: 'delve',        type: 'economy',     name: '入秘境探一次',      target: 1,    reward: 35,  icon: '◈' },
   ],
 
   init() {
@@ -548,6 +549,10 @@ const CharacterVoice = {
     harvest:      ['今日有收成。'],
     lonely:       ['……许久没人来了。', '门环都落灰了。'],
     rebirth:      ['……又回到这里。', '从头再来，也无妨。'],
+    sect:         ['弟子沈砚，见过诸位。', '总算有个去处了。'],
+    enterRealm:   ['门开一条缝。够了。', '进去之后，就别回头看。'],
+    hurt:         ['……肋骨断了两根。', '逞强的代价。'],
+    delveBack:    ['带出来的东西，够练一阵。', '见好就收，不丢人。'],
   },
   MOODS: { sit: '入定', craft: '候火', night: '观星', idle: '静修' },
 
