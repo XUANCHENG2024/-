@@ -593,6 +593,8 @@ const UI = {
   // === 系统面板 ===
   _bindSystem() {
     document.getElementById('btn-save').addEventListener('click', () => {
+      // 手动存档视为玩家明确选择"以本页为准"，重新夺回写入权
+      SaveSystem.reclaimWriter();
       SaveSystem.save(GameEngine.state);
       this.showToast('进度已保存');
     });

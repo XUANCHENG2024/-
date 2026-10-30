@@ -29,7 +29,16 @@ global.document = {
   createElement: () => ({ style: {}, classList: { add: () => {}, remove: () => {}, toggle: () => {} }, setAttribute: () => {}, appendChild: () => {} }),
   hidden: false,
 };
-global.window = { addEventListener: () => {} };
+global.window = {
+  // 记录监听器，便于测试 storage / visibilitychange 这类跨标签页行为
+  _listeners: {},
+  addEventListener(k, fn) { (this._listeners[k] = this._listeners[k] || []).push(fn); },
+  removeEventListener(k, fn) {
+    const arr = this._listeners[k];
+    if (arr) this._listeners[k] = arr.filter(f => f !== fn);
+  },
+  dispatch(k, e) { (this._listeners[k] || []).forEach(f => f(e)); },
+};
 global.navigator = { vibrate: () => {} };
 global.AudioContext = undefined;
 
@@ -1007,6 +1016,101 @@ test('脏档缺字段时补默认值而不是崩溃', () => {
   assertEq(fixed.plots.length, GameConfig.maxPlots, '地块数组应补齐');
   assert(Array.isArray(fixed.craftingQueue), '炼丹队列应为数组');
   assertEq(fixed.herb, 10, '缺失资源应回落到默认值');
+});
+
+// ===========================
+// 15. 时间连续性（放置游戏的核心承诺）
+// ===========================
+console.log('\n=== 15. 时间连续性与多标签页 ===');
+
+test('切后台 10 分钟回来会补算收益', () => {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = 6;
+  GameEngine.state.level = 1;
+  GameEngine.state.cultivation = 0;
+  GameEngine._lastTick = Date.now();
+
+  GameEngine._setBackground(true);
+  GameEngine._lastTick = Date.now() - 600 * 1000;  // 期间没有任何 tick
+  GameEngine._setBackground(false);
+
+  const should = calcRate(6, false, false) * GameConfig.bgRateMult * 600;
+  const got = GameEngine.state.cultivation;
+  assert(got > should * 0.95, `应接近后台收益 ${should.toFixed(0)}，实际 ${got.toFixed(0)}`);
+});
+
+test('页面被冻结（无 visibilitychange）也能补算', () => {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = 6;
+  GameEngine.state.level = 1;
+  GameEngine.state.cultivation = 0;
+  GameEngine._lastTick = Date.now() - 600 * 1000;   // 上一次 tick 在十分钟前
+
+  GameEngine.tick();   // dt 会被判为超时，走离场结算
+
+  const should = calcRate(6, false, false) * GameConfig.bgRateMult * 600;
+  assert(GameEngine.state.cultivation > should * 0.95,
+    `冻结恢复应补算 ${should.toFixed(0)}，实际 ${GameEngine.state.cultivation.toFixed(0)}`);
+});
+
+test('补算受离线结算上限约束', () => {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = 6;
+  GameEngine.state.level = 1;
+  GameEngine.state.cultivation = 0;
+  // 离开 30 小时，远超 8 小时上限
+  GameEngine._lastTick = Date.now() - 30 * 3600 * 1000;
+  const summary = GameEngine.catchUpAway();
+  assert(summary, '应返回补算摘要');
+  assertEq(Math.round(summary.seconds), GameConfig.offlineCapSeconds, '应被钳到离线上限');
+  assert(summary.capped, '应标记为已达上限');
+});
+
+test('不足 10 秒的离开不触发补算', () => {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine._lastTick = Date.now() - 5 * 1000;
+  const summary = GameEngine.catchUpAway();
+  assertEq(summary, null, '5 秒不应补算');
+});
+
+test('补算与累计修为同步累加', () => {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = 6;
+  GameEngine.state.level = 1;
+  GameEngine.state.cultivation = 0;
+  GameEngine.state.totalCultivation = 0;
+  GameEngine._lastTick = Date.now() - 120 * 1000;
+  const before = GameEngine.state.totalCultivation;
+  GameEngine.catchUpAway();
+  assert(GameEngine.state.totalCultivation > before, '轮回统计应包含补算部分');
+});
+
+test('另一个标签页写入后本页停止自动存档', () => {
+  let notified = 0;
+  SaveSystem._autoSaveDisabled = false;
+  SaveSystem.watchOtherTabs(() => { notified++; });
+  global.window.dispatch('storage', { key: SaveSystem.WRITER_KEY, newValue: 'another-tab' });
+  assert(SaveSystem._autoSaveDisabled, '应降级为不自动存档');
+  assertEq(notified, 1, '应通知一次');
+  // 重复事件不应反复提示
+  global.window.dispatch('storage', { key: SaveSystem.WRITER_KEY, newValue: 'another-tab' });
+  assertEq(notified, 1, '只提示一次');
+});
+
+test('自己的写入不触发冲突', () => {
+  SaveSystem._autoSaveDisabled = false;
+  let notified = 0;
+  SaveSystem.watchOtherTabs(() => { notified++; });
+  global.window.dispatch('storage', { key: SaveSystem.WRITER_KEY, newValue: SaveSystem._tabId });
+  assert(!SaveSystem._autoSaveDisabled, '自己的写入不应降级');
+  assertEq(notified, 0, '不应通知');
+});
+
+test('手动存档重新夺回写入权', () => {
+  SaveSystem._autoSaveDisabled = true;
+  SaveSystem.reclaimWriter();
+  assert(!SaveSystem._autoSaveDisabled, '应恢复自动存档');
+  assertEq(localStorage.getItem(SaveSystem.WRITER_KEY), SaveSystem._tabId, '写入者应改回本页');
 });
 
 // ===========================

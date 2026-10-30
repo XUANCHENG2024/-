@@ -8,8 +8,13 @@
 const SaveSystem = {
   SAVE_KEY: 'desktop_xianxia_save',
   BACKUP_KEY: 'desktop_xianxia_backup_',
+  WRITER_KEY: 'desktop_xianxia_writer',   // 最近一次写入的标签页标识
   MAX_BACKUPS: 3,
   VERSION: 1,
+  _backupSlot: 0,
+  // 每个标签页一个随机 id：多开时靠它判断"这次存档是不是别人写的"
+  _tabId: Math.random().toString(36).slice(2) + Date.now().toString(36),
+  _autoSaveDisabled: false,
 
   /** 创建默认存档 */
   createDefault() {
@@ -68,6 +73,9 @@ const SaveSystem = {
 
       // 备份
       this._createBackup(json);
+
+      // 标记写入者：另一个标签页靠 storage 事件发现冲突
+      try { localStorage.setItem(this.WRITER_KEY, this._tabId); } catch (e) { /* ignore */ }
 
       return true;
     } catch (e) {
@@ -267,31 +275,22 @@ const SaveSystem = {
     reader.readAsText(file);
   },
 
-  /** 计算离线收益 */
-  calculateOfflineGains(gameState, currentTime) {
-    const lastSave = gameState.lastSaveTicks || 0;
-
-    // 灵龟「离线上限 +2 小时」——原实现只读 GameConfig.offlineCapSeconds，
-    // PetSystem.offlineCapBonus 定义了却没人调用。
-    const petCapBonus = (typeof PetSystem !== 'undefined') ? PetSystem.offlineCapBonus : 0;
-    const capSeconds = GameConfig.offlineCapSeconds + petCapBonus;
-
-    const elapsed = Math.min((currentTime - lastSave) / 1000, capSeconds);
-    if (elapsed < 10) return null; // 不足10秒不计算
-
-    const R = gameState.realm;
-    // 离线速率必须与在线同源：原实现只用了 calcRate(bg)，漏掉了宠物、功法、
-    // 道行三层加成，导致挂着不动反而比上线更亏。
-    let rate = calcRate(R, true, false); // 后台速率
+  /**
+   * 计算"离开一段时间"的收益（离线结算与切后台补算共用同一套公式）。
+   * 抽成公共函数的原因：原实现只有离线走这套逻辑，切后台回来完全不结算，
+   * 两处一旦各写一遍就必然漂移，所以统一到一个入口。
+   * @param {object} gameState
+   * @param {number} seconds 离开的秒数（调用方负责按上限钳制）
+   */
+  computeAwayGains(gameState, seconds) {
+    const rate0 = calcRate(gameState.realm, true, false); // 后台速率
+    let rate = rate0;
     if (typeof PetSystem !== 'undefined') rate *= (1 + PetSystem.cultivationRateBonus);
     if (typeof TechniqueSystem !== 'undefined') rate *= (1 + TechniqueSystem.cultivationRateBonus);
     rate *= 1 + (gameState.dao || 0) * GameConfig.rebirth.daoRatePerPoint;
     if (gameState.pillBoost) rate *= GameConfig.pillBoostMult;
 
-    const cultivationGain = rate * elapsed;
-
-    // 灵草产出必须按"已开垦地块数"算，原实现写死 startingPlots，
-    // 玩家把灵田扩到 8 块后离线收益仍按 3 块结。
+    // 灵草按"已开垦地块数"结算，而不是写死起始地块
     const plots = Math.min(
       Math.max(GameConfig.startingPlots, gameState.unlockedPlots || GameConfig.startingPlots),
       GameConfig.maxPlots
@@ -300,17 +299,36 @@ const SaveSystem = {
       * (1 + (typeof TechniqueSystem !== 'undefined' ? TechniqueSystem.herbBonus : 0))
       * (1 + (gameState.dao || 0) * GameConfig.rebirth.daoHerbPerPoint);
 
-    const herbGain = Math.floor(GameConfig.herbPerHourPerPlot * plots * herbMult * elapsed / 3600);
-    const oreGain = Math.floor(GameConfig.orePerHour * elapsed / 3600);
-    const dewGain = Math.floor(GameConfig.dewPerHour * elapsed / 3600);
+    return {
+      cultivation: rate * seconds,
+      herb: Math.floor(GameConfig.herbPerHourPerPlot * plots * herbMult * seconds / 3600),
+      ore: Math.floor(GameConfig.orePerHour * seconds / 3600),
+      dew: Math.floor(GameConfig.dewPerHour * seconds / 3600),
+      rate,
+    };
+  },
+
+  /** 计算离线收益 */
+  calculateOfflineGains(gameState, currentTime) {
+    const lastSave = gameState.lastSaveTicks || 0;
+
+    // 灵龟「离线上限 +2 小时」
+    const petCapBonus = (typeof PetSystem !== 'undefined') ? PetSystem.offlineCapBonus : 0;
+    const capSeconds = GameConfig.offlineCapSeconds + petCapBonus;
+
+    const rawElapsed = (currentTime - lastSave) / 1000;
+    const elapsed = Math.min(rawElapsed, capSeconds);
+    if (elapsed < 10) return null; // 不足10秒不计算
+
+    const g = this.computeAwayGains(gameState, elapsed);
 
     return {
       elapsedSeconds: elapsed,
-      cultivation: cultivationGain,
-      herb: herbGain,
-      ore: oreGain,
-      dew: dewGain,
-      capped: (currentTime - lastSave) / 1000 > capSeconds,
+      cultivation: g.cultivation,
+      herb: g.herb,
+      ore: g.ore,
+      dew: g.dew,
+      capped: rawElapsed > capSeconds,
       capHours: +(capSeconds / 3600).toFixed(1),
     };
   },
@@ -339,5 +357,29 @@ const SaveSystem = {
       } catch (e) { /* continue */ }
     }
     return null;
+  },
+
+  /**
+   * 监听其它标签页的存档写入。
+   * 两个标签页同时开同一份存档时，各自每 60 秒自动存档一次，
+   * 后写的会整体覆盖先写的——玩家在 A 页的半小时操作会被 B 页抹掉，且毫无提示。
+   * 这里检测到别人写入后，让本页停止自动存档并交给上层提示。
+   * @param {function} onConflict 回调，参数为对方 tabId
+   */
+  watchOtherTabs(onConflict) {
+    if (typeof window === 'undefined' || !window.addEventListener) return;
+    window.addEventListener('storage', (e) => {
+      if (e.key !== this.WRITER_KEY || !e.newValue) return;
+      if (e.newValue === this._tabId) return;      // 自己写的，忽略
+      if (this._autoSaveDisabled) return;          // 已降级，不重复提示
+      this._autoSaveDisabled = true;
+      if (typeof onConflict === 'function') onConflict(e.newValue);
+    });
+  },
+
+  /** 手动存档时重新夺回写入权（玩家明确选择在本页继续） */
+  reclaimWriter() {
+    this._autoSaveDisabled = false;
+    try { localStorage.setItem(this.WRITER_KEY, this._tabId); } catch (e) { /* ignore */ }
   },
 };

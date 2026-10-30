@@ -479,3 +479,191 @@ if (!JSON_MODE) {
   console.log('\n  DOM 变更热点（100 tick 采样，Top10）：');
   top.forEach(([k, v]) => console.log(`    ${String(v).padStart(4)}×  ${k}`));
 }
+
+// ============================================================
+// G. 时间连续性（放置游戏的核心承诺：离开也在长）
+// ============================================================
+log('\n═══ G · 时间连续性 ═══');
+
+// G1 端到端：切后台 10 分钟再回来（真实用户流程：hidden → visible → 补算 → 继续 tick）
+// 放在渡劫期测，避免被 100 点的低境界上限截断
+const AWAY_REALM = 6;
+{
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = AWAY_REALM;
+  GameEngine.state.level = 1;
+  GameEngine.state.cultivation = 0;
+  GameEngine._lastTick = Date.now();
+
+  GameEngine._setBackground(true);                 // 隐藏
+  GameEngine._lastTick = Date.now() - 600 * 1000; // 期间没有任何 tick
+  GameEngine._setBackground(false);               // 回到前台
+  GameEngine.tick();                              // 循环恢复第一帧
+
+  const got = GameEngine.state.cultivation;
+  const should = calcRate(AWAY_REALM, false, false) * GameConfig.bgRateMult * 600;
+  R.awayKeep = +(got / should * 100).toFixed(1);
+  log(`  G1 切后台 10 分钟（端到端）：实得 ${got.toFixed(0)} 点 / 应得 ${should.toFixed(0)} 点 → 保留 ${R.awayKeep}%`);
+}
+
+// G1b 极端情况：浏览器根本没有派发 visibilitychange，只是把 rAF 停了
+// 此时只能靠 dt 钳制，收益会大量丢失——属于无法完全消除的残余风险，单独记录。
+{
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = AWAY_REALM;
+  GameEngine.state.level = 1;
+  GameEngine.state.cultivation = 0;
+  GameEngine._lastTick = Date.now() - 600 * 1000;
+  GameEngine.tick();
+  const got = GameEngine.state.cultivation;
+  const should = calcRate(AWAY_REALM, false, false) * GameConfig.bgRateMult * 600;
+  R.awayKeepNoEvent = +(got / should * 100).toFixed(1);
+  log(`  G1b 无 visibilitychange 事件（仅 dt 钳制）：保留 ${R.awayKeepNoEvent}% —— 残余风险`);
+}
+
+// G2 回前台是否有补算
+{
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine._lastTick = Date.now() - 300 * 1000;
+  GameEngine._setBackground(true);
+  const before = GameEngine.state.cultivation;
+  GameEngine._setBackground(false);          // 回前台
+  const caught = GameEngine.state.cultivation - before;
+  R.hasCatchUp = caught > 1;
+  log(`  G2 后台→前台补算量：${caught.toFixed(2)} 点 → ${R.hasCatchUp ? '有补算' : '无补算'}`);
+}
+
+// G3 隐藏时是否落盘（移动端常直接杀进程，beforeunload 不一定触发）
+{
+  const appSrc = CODE['app.js'];
+  R.saveOnHidden = /visibilitychange[\s\S]{0,400}SaveSystem\.save/.test(appSrc);
+  R.saveOnUnload = /beforeunload/.test(appSrc);
+  log(`  G3 隐藏时存档：${R.saveOnHidden ? '有' : '无'} · 卸载时存档：${R.saveOnUnload ? '有' : '无'}`);
+}
+
+// G4 重载后的离线结算（对照组，这条本来就完整）
+{
+  const st = SaveSystem.createDefault();
+  st.lastSaveTicks = Date.now() - 600 * 1000;
+  const off = SaveSystem.calculateOfflineGains(st, Date.now());
+  R.reloadKeep = +(off.cultivation / (calcRate(1, false, false) * GameConfig.bgRateMult * 600) * 100).toFixed(1);
+  log(`  G4 关闭重开 10 分钟：保留 ${R.reloadKeep}%（对照组）`);
+}
+
+// ============================================================
+// H. 经济约束力
+// ============================================================
+log('\n═══ H · 经济约束力 ═══');
+{
+  const plotSink = GameConfig.plotCosts.reduce((a, b) => a + b, 0);
+
+  let techSink = 0;
+  for (const m of CODE['systems.js'].matchAll(/cost:\s*(\d+)/g)) techSink += Number(m[1]);
+
+  // 宠物升级：upgradeCost × level，1..maxLevel-1 次
+  let petSink = 0;
+  const petRe = /upgradeCost:\s*(\d+),[\s\S]{0,40}?maxLevel:\s*(\d+)/g;
+  let pm;
+  while ((pm = petRe.exec(CODE['systems.js'])) !== null) {
+    const base = Number(pm[1]), max = Number(pm[2]);
+    for (let lv = 1; lv < max; lv++) petSink += base * lv;
+  }
+
+  const totalSink = plotSink + techSink + petSink;
+
+  // 稳态收入：灵草净产 → 灵石
+  const c0 = GameConfig.crops[0];
+  const herbPerHourPerPlot = (c0.yield - c0.seedCost) / c0.growthTime * 3600;
+  const sellOffer0 = GameConfig.shop.sell.find(s => s.id === 'herb');
+  const stonePerHerb = sellOffer0.price / sellOffer0.amount;
+  const income3 = herbPerHourPerPlot * GameConfig.startingPlots * stonePerHerb;
+  const income8 = herbPerHourPerPlot * GameConfig.maxPlots * stonePerHerb;
+
+  R.economy = {
+    totalSink, plotSink, techSink, petSink,
+    incomePerHour3Plots: Math.round(income3),
+    incomePerHour8Plots: Math.round(income8),
+    hoursToBuyAll3: +(totalSink / income3).toFixed(1),
+    hoursToBuyAll8: +(totalSink / income8).toFixed(1),
+  };
+  log(`  灵石沉没口合计：${totalSink}（扩地 ${plotSink} + 功法 ${techSink} + 宠物 ${petSink}）`);
+  log(`  稳态收入：3 块地 ${Math.round(income3)}/h · 8 块地 ${Math.round(income8)}/h`);
+  log(`  买完全部需：${(totalSink / income3).toFixed(1)}h（3 块地）/ ${(totalSink / income8).toFixed(1)}h（8 块地）`);
+  log(`  买完之后：无任何灵石消耗口`);
+}
+
+
+// ============================================================
+// I. 多标签页并发
+// ============================================================
+
+log('\n═══ I · 多标签页并发 ═══');
+{
+  const appSrc = CODE['app.js'] + CODE['ui.js'] + CODE['save.js'];
+  R.hasStorageListener = /addEventListener\('storage'/.test(appSrc);
+  R.hasSingleTabLock = /BroadcastChannel|navigator\.locks/.test(appSrc);
+  log(`  跨标签页监听(storage)：${R.hasStorageListener ? '有' : '无'}`);
+  log(`  单写者锁：${R.hasSingleTabLock ? '有' : '无（两个标签页会互相覆盖存档）'}`);
+  log(`  自动存档间隔 60s → 冲突时最多丢失 60 秒操作`);
+}
+
+
+
+// ============================================================
+// J. 奖励尺度一致性（绝对点数额度会随境界漂移）
+// ============================================================
+log('\n═══ J · 奖励尺度一致性 ═══');
+{
+  // 访客修为奖励是写死的绝对点数，看看它相对当前层上限是多少
+  const visitorPts = [];
+  const re = /reward:\s*\{\s*cultivation:\s*(\d+)\s*\}/g;
+  let m;
+  while ((m = re.exec(CODE['features.js'])) !== null) visitorPts.push(Number(m[1]));
+  const uniqPts = [...new Set(visitorPts)].sort((a, b) => a - b);
+
+  const rows = [];
+  for (const pts of uniqPts) {
+    const pct = [];
+    for (let r = 1; r <= 6; r++) {
+      const cap = calcQ(r, 1, 1.0);
+      // 实际发放量 = min(基值 × η(R), 上限半层)，与 features.js 保持一致
+      const gain = Math.min(pts * Math.pow(GameConfig.realmRateMult, r - 1), cap * 0.5);
+      pct.push(+(gain / cap * 100).toFixed(1));
+    }
+    rows.push({ pts, pct });
+  }
+  R.visitorScale = rows;
+  const maxPts = uniqPts[uniqPts.length - 1];
+  const top = rows.find(x => x.pts === maxPts);
+  log(`  访客最高修为奖励 ${maxPts} 点，实际发放占各境界首层上限：${top.pct.map((p, i) => `R${i + 1} ${p}%`).join(' ')}`);
+  log(`    → 同一份奖励在 R1 相当于 ${top.pct[0]}% 一层，在 R6 为 ${top.pct[5]}%`);
+
+  // 日常目标奖励同样写死基值，同样按 η(R) 缩放
+  const dailyPts = [...CODE['features.js'].matchAll(/reward:\s*(\d+),/g)].map(x => Number(x[1]));
+  const dMax = Math.max(...dailyPts);
+  const dPct = [];
+  for (let r = 1; r <= 6; r++) {
+    const cap = calcQ(r, 1, 1.0);
+    const gain = Math.min(dMax * Math.pow(GameConfig.realmRateMult, r - 1), cap * 0.5);
+    dPct.push(+(gain / cap * 100).toFixed(1));
+  }
+  R.dailyScale = { max: dMax, pct: dPct };
+  log(`  日常最高奖励 ${dMax} 点，实际发放占比：${dPct.map((p, i) => `R${i + 1} ${p}%`).join(' ')}`);
+
+  // 聚气丹是按比例的，作为"正确做法"的对照
+  const pillPct = +(GameConfig.pillInstantPct * 100).toFixed(0);
+  log(`  聚气丹按比例结算：各境界恒为 ${pillPct}%（对照）`);
+}
+
+// ============================================================
+// K. 音效资源
+// ============================================================
+log('\n═══ K · 音频资源 ═══');
+{
+  const noiseCached = /_noiseBuffer|_noiseCache/.test(CODE['features.js']);
+  const disconnects = /\.disconnect\(\)/.test(CODE['features.js']);
+  R.audioNoiseCached = noiseCached;
+  R.audioDisconnects = disconnects;
+  log(`  白噪声缓冲复用：${noiseCached ? '有' : '无（每次出剑新建 AudioBuffer）'}`);
+  log(`  节点播后断开：${disconnects ? '有' : '无（连发时节点积压）'}`);
+}

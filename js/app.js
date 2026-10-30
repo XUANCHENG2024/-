@@ -157,9 +157,32 @@
       UI.showToast(msg);
     });
 
-    // 8. 页面卸载前保存
+    // 8.2 多标签页冲突：别人在写同一份存档时降级，避免互相覆盖
+    SaveSystem.watchOtherTabs(() => {
+      console.warn('[App] 另一个标签页接管了存档，本页已停止自动存档');
+      UI.showToast('检测到另一个标签页在运行，本页已停止自动存档');
+    });
+
+    // 8. 页面卸载 / 隐藏前保存
     window.addEventListener('beforeunload', () => {
       SaveSystem.save(GameEngine.state);
+    });
+    // 移动端常直接杀进程，beforeunload 不一定触发，隐藏时就落一次盘
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) SaveSystem.save(GameEngine.state);
+    });
+
+    // 8.1 离开收益提示：切后台回来若结算了可观收益，给一条汇总
+    GameEngine.on('awayGains', (g) => {
+      if (!g || g.seconds < 60) return;          // 不到 1 分钟不打扰
+      const parts = [];
+      if (g.cultivation >= 1) parts.push(`修为 +${Math.floor(g.cultivation)}`);
+      if (g.herb) parts.push(`灵草 +${g.herb}`);
+      if (g.dew) parts.push(`凝露 +${g.dew}`);
+      if (!parts.length) return;
+      const mins = Math.round(g.seconds / 60);
+      const tail = g.capped ? '（已达结算上限）' : '';
+      UI.showToast(`离开 ${mins} 分钟，${parts.join(' · ')}${tail}`);
     });
 
     // 7.5 灵石累计（日常「累计获得灵石」）—— 卖出、访客、奖励都算，统一在这里观察

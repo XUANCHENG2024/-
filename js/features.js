@@ -127,10 +127,12 @@ const DailyGoals = {
     if (!goal || !goal.completed || goal.claimed) return false;
     goal.claimed = true;
 
-    // 奖励修为
+    // 奖励修为（随境界同步成长，理由同访客奖励）
     const state = GameEngine.state;
     const cap = calcQ(state.realm, state.level, 1.0);
-    state.cultivation = Math.min(state.cultivation + goal.reward, cap);
+    const eta = Math.pow(GameConfig.realmRateMult, state.realm - 1);
+    const gain = Math.min(goal.reward * eta, cap * 0.5);
+    state.cultivation = Math.min(state.cultivation + gain, cap);
 
     this._saveNow();
     return true;
@@ -283,7 +285,12 @@ const VisitorSystem = {
       for (const [res, amount] of Object.entries(option.reward)) {
         if (res === 'cultivation') {
           const cap = calcQ(state.realm, state.level, 1.0);
-          state.cultivation = Math.min(state.cultivation + amount, cap);
+          // 修为奖励随境界同步成长：奖励表是按练气期手感定的绝对值，
+          // 到渡劫期 +100 只占一层的 5%，访客就变成了纯装饰。
+          // 用与修炼速率相同的 η(R)=1.5^(R-1) 缩放，练气期数值完全不变。
+          const eta = Math.pow(GameConfig.realmRateMult, state.realm - 1);
+          const gain = Math.min(amount * eta, cap * 0.5);  // 单次最多半层
+          state.cultivation = Math.min(state.cultivation + gain, cap);
         } else {
           state[res] = (state[res] || 0) + amount;
         }
@@ -389,25 +396,40 @@ const SoundFX = {
     const gain = ctx.createGain();
     osc.type = waveType || 'sine';
     osc.frequency.setValueAtTime(freq, time);
-    gain.gain.setValueAtTime(volume || 0.2, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+    const vol = Math.max(0.0001, volume || 0.2);   // exponentialRamp 不接受 0
+    gain.gain.setValueAtTime(vol, time);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
     osc.connect(gain).connect(ctx.destination);
+    // 播完主动断开：练剑连发是 5 次/秒，长按几分钟会累积大量仍挂在
+    // destination 上的节点，显式释放比等 GC 更稳。
+    osc.onended = () => { try { osc.disconnect(); gain.disconnect(); } catch (e) { /* ignore */ } };
     osc.start(time);
     osc.stop(time + duration + 0.05);
   },
 
-  _noise(ctx, time, duration, volume) {
-    const bufferSize = ctx.sampleRate * duration;
+  /** 白噪声缓冲复用：原来每次出剑都新建一个 AudioBuffer（约 7KB） */
+  _noiseBuffer(ctx, duration) {
+    this._noiseCache = this._noiseCache || {};
+    const key = `${ctx.sampleRate}|${duration}`;
+    if (this._noiseCache[key]) return this._noiseCache[key];
+
+    const bufferSize = Math.max(1, Math.floor(ctx.sampleRate * duration));
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
       data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
     }
+    this._noiseCache[key] = buffer;
+    return buffer;
+  },
+
+  _noise(ctx, time, duration, volume) {
     const source = ctx.createBufferSource();
-    source.buffer = buffer;
+    source.buffer = this._noiseBuffer(ctx, duration);
     const gain = ctx.createGain();
     gain.gain.value = volume || 0.1;
     source.connect(gain).connect(ctx.destination);
+    source.onended = () => { try { source.disconnect(); gain.disconnect(); } catch (e) { /* ignore */ } };
     source.start(time);
   },
 };

@@ -36,20 +36,33 @@ const GameEngine = {
   // === 主循环（由 app.js 调用）===
   tick() {
     const now = Date.now();
-    const dt = Math.min((now - this._lastTick) / 1000, 5); // 钳制最大间隔
-    this._lastTick = now;
+    let dt = (now - this._lastTick) / 1000;
 
-    this._tickCultivation(dt);
-    this._tickCollection(dt);
-    this._tickFarming(dt);
-    this._tickAlchemy(dt);
-    this._tickMeditation(dt);
+    // 超过 10 秒没有跑过 tick，说明页面被冻结/休眠过（且不一定派发 visibilitychange）。
+    // 此时按"离场结算"补算，而不是只按钳制后的 5 秒算 —— 否则放置游戏最核心的
+    // "离开也在长"会在这些场景下静默失效。
+    if (dt > 10) {
+      this.catchUpAway();   // 内部会把 _lastTick 拨到当下
+      dt = 0;
+    } else {
+      this._lastTick = now;
+      dt = Math.min(dt, 5); // 正常帧间隔钳制，防止一次跳太多
+    }
 
-    // 自动存档（60秒）
-    this._autoSaveTimer += dt;
-    if (this._autoSaveTimer >= 60) {
-      this._autoSaveTimer = 0;
-      SaveSystem.save(this.state);
+    if (dt > 0) {
+      this._tickCultivation(dt);
+      this._tickCollection(dt);
+      this._tickFarming(dt);
+      this._tickAlchemy(dt);
+      this._tickMeditation(dt);
+
+      // 自动存档（60秒）
+      // 检测到另一个标签页在写同一份存档时停手，避免互相覆盖
+      this._autoSaveTimer += dt;
+      if (this._autoSaveTimer >= 60) {
+        this._autoSaveTimer = 0;
+        if (!SaveSystem._autoSaveDisabled) SaveSystem.save(this.state);
+      }
     }
 
     this._emit('tick', dt);
@@ -567,9 +580,56 @@ const GameEngine = {
       console.log('[GameEngine] Background mode ON');
     } else {
       console.log('[GameEngine] Background mode OFF');
-      this._emit('foregroundReturn', Date.now());
+      // 回到前台先补算，再让循环继续。
+      // 原实现只发一个 foregroundReturn 事件，没人订阅，于是切标签页
+      // 10 分钟只结算 5 秒（dt 被钳制），一个放置游戏却"离开不长"。
+      const summary = this.catchUpAway();
+      this._emit('foregroundReturn', { at: Date.now(), away: summary });
     }
     this._emit('backgroundChanged', isBg);
+  },
+
+  /**
+   * 补算"离开期间"的收益。
+   * 以 _lastTick 为基准：rAF 停止时它停在隐藏前最后一帧，差值就是真实离开时长；
+   * 若浏览器仍在低频跑帧（每次 dt 已钳到 5 秒并已结算过），差值自然很小，不会重复计入。
+   * @returns {object|null} 补算摘要，不足 10 秒或无收益时返回 null
+   */
+  catchUpAway() {
+    const now = Date.now();
+    const gapSeconds = (now - this._lastTick) / 1000;
+
+    // 无论是否补算，都要把基准拨到当下，避免下一帧 dt 再次变大
+    this._lastTick = now;
+
+    if (!(gapSeconds >= 10)) return null;
+
+    const petCapBonus = (typeof PetSystem !== 'undefined') ? PetSystem.offlineCapBonus : 0;
+    const capSeconds = GameConfig.offlineCapSeconds + petCapBonus;
+    const seconds = Math.min(gapSeconds, capSeconds);
+
+    const g = SaveSystem.computeAwayGains(this.state, seconds);
+
+    const cap = calcQ(this.state.realm, this.state.level, 1.0);
+    const before = this.state.cultivation;
+    this.state.cultivation = Math.min(cap, this.state.cultivation + g.cultivation);
+    const actualCultivation = this.state.cultivation - before;
+    this.state.totalCultivation = (this.state.totalCultivation || 0) + actualCultivation;
+
+    this.state.herb = Math.min(GameConfig.resourceHardCap, (this.state.herb || 0) + g.herb);
+    this.state.ore = Math.min(GameConfig.resourceHardCap, (this.state.ore || 0) + g.ore);
+    this.state.dew = Math.min(GameConfig.resourceHardCap, (this.state.dew || 0) + g.dew);
+
+    const summary = {
+      seconds,
+      cultivation: actualCultivation,
+      herb: g.herb,
+      ore: g.ore,
+      dew: g.dew,
+      capped: gapSeconds > capSeconds,
+    };
+    this._emit('awayGains', summary);
+    return summary;
   },
 
   // === 事件系统 ===
