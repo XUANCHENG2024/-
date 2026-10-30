@@ -587,19 +587,45 @@ test('未完成目标不能领取', () => {
   assert(!ok, 'Should not claim incomplete goal');
 });
 
-test('increment 增加进度', () => {
+test('increment 按 key 增加进度', () => {
   localStorage.clear();
   DailyGoals.init();
   const goals = DailyGoals.getAll();
-  goals[0].type = 'farming';
+  goals[0].key = 'plant';
   goals[0].target = 3;
   goals[0].progress = 0;
   goals[0].completed = false;
-  DailyGoals.increment('farming', 1);
-  DailyGoals.increment('farming', 1);
-  DailyGoals.increment('farming', 1);
+  DailyGoals.increment('plant', 1);
+  DailyGoals.increment('plant', 1);
+  assert(!goals[0].completed, '2/3 还不应完成');
+  DailyGoals.increment('plant', 1);
   assert(goals[0].completed, 'Should be complete after 3 increments');
 });
+
+test('回归守卫：按分类名调用不应推进进度', () => {
+  // 旧实现用 goal.type 匹配（farming/alchemy/...），而调用方传的是动作名
+  // （plant/harvest/...），导致日常目标整体失效。这条用例锁死新契约。
+  localStorage.clear();
+  DailyGoals.init();
+  const goals = DailyGoals.getAll();
+  goals[0].key = 'plant';
+  goals[0].type = 'farming';
+  goals[0].progress = 0;
+  goals[0].completed = false;
+  DailyGoals.increment('farming', 1);
+  assertEq(goals[0].progress, 0, '按 type 名调用不应产生进度');
+});
+
+test('任务池每个任务的 key 都能被某个调用方触发', () => {
+  localStorage.clear();
+  DailyGoals.init();
+  const keys = DailyGoals._taskPool.map(t => t.key);
+  const appSrc = require('fs').readFileSync(require('path').join(__dirname, 'js', 'app.js'), 'utf8')
+    + require('fs').readFileSync(require('path').join(__dirname, 'js', 'ui.js'), 'utf8');
+  const missing = keys.filter(k => !appSrc.includes(`increment('${k}'`));
+  assertEq(missing.length, 0, `未被任何调用点覆盖的 key: ${missing.join(',')}`);
+});
+
 
 // ===========================
 // 12. 访客系统（MECH-014）
@@ -831,6 +857,156 @@ test('宠物+功法加成叠加后修为速率提升', () => {
   PetSystem._owned = {};
   PetSystem._activePet = null;
   TechniqueSystem._learned = {};
+});
+
+// ===========================
+// 14. 加成兑现与系统一致性（本轮优化新增）
+// ===========================
+console.log('\n=== 14. 加成兑现与系统一致性 ===');
+
+test('炼丹心法确实缩短炼制时间', () => {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.herb = 999; GameEngine.state.dew = 999; GameEngine.state.ore = 999;
+  TechniqueSystem._learned = {};
+  GameEngine.startCraft('pill_qiju');
+  const slow = GameEngine.state.craftingQueue[0].timeRemaining;
+  GameEngine.state.craftingQueue = [];
+
+  TechniqueSystem._learned = { alchemy_heart: true };  // +25% 速度
+  GameEngine.startCraft('pill_qiju');
+  const fast = GameEngine.state.craftingQueue[0].timeRemaining;
+  TechniqueSystem._learned = {};
+  assert(fast < slow, `学习心法后应更快：${fast} < ${slow}`);
+  assertClose(fast, slow * 0.75, 0.01);
+});
+
+test('天道功让破障丹有几率不被消耗', () => {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = 2;
+  GameEngine.state.level = 9;
+  GameEngine.state.cultivation = calcQ(2, 9, 1.0);
+  GameEngine.state.spiritSense = 999; GameEngine.state.health = 9999; GameEngine.state.mana = 9999;
+  GameEngine.state.breakthroughPill = 1;
+  TechniqueSystem._learned = { heavenly_dao: true };   // 破障丹 50% 不消耗
+
+  const origRandom = Math.random;
+  Math.random = () => 0.1;    // 强制落进 50% 折扣区间
+  const r = GameEngine.tryBreakthrough();
+  Math.random = origRandom;
+  TechniqueSystem._learned = {};
+
+  assert(r.success, '应突破成功');
+  assertEq(GameEngine.state.breakthroughPill, 1, '丹药应被保留');
+  assert(r.pillSaved, '返回值应标记丹药被保留');
+});
+
+test('未学天道功时破障丹照常消耗', () => {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.realm = 2;
+  GameEngine.state.level = 9;
+  GameEngine.state.cultivation = calcQ(2, 9, 1.0);
+  GameEngine.state.spiritSense = 999; GameEngine.state.health = 9999; GameEngine.state.mana = 9999;
+  GameEngine.state.breakthroughPill = 1;
+  TechniqueSystem._learned = {};
+  GameEngine.tryBreakthrough();
+  assertEq(GameEngine.state.breakthroughPill, 0, '应消耗 1 颗');
+});
+
+test('灵龟提升离线结算上限', () => {
+  const st = SaveSystem.createDefault();
+  st.lastSaveTicks = Date.now() - (GameConfig.offlineCapSeconds + 3600) * 1000; // 超出 8h 上限 1 小时
+  PetSystem._owned = {};
+  PetSystem._activePet = null;
+  const without = SaveSystem.calculateOfflineGains(st, Date.now());
+
+  PetSystem._owned = { spirit_turtle: { level: 1, active: true } };
+  PetSystem._activePet = 'spirit_turtle';
+  const withPet = SaveSystem.calculateOfflineGains(st, Date.now());
+  PetSystem._owned = {}; PetSystem._activePet = null;
+
+  assert(withPet.elapsedSeconds > without.elapsedSeconds,
+    `带灵龟应结算更久：${withPet.elapsedSeconds} > ${without.elapsedSeconds}`);
+});
+
+test('离线灵草随已开垦地块数增长', () => {
+  const mk = (plots) => {
+    const st = SaveSystem.createDefault();
+    st.unlockedPlots = plots;
+    st.lastSaveTicks = Date.now() - 3600 * 1000;
+    return SaveSystem.calculateOfflineGains(st, Date.now()).herb;
+  };
+  const h3 = mk(3), h8 = mk(8);
+  assert(h8 > h3 * 2, `8 块地应明显多于 3 块：${h8} vs ${h3}`);
+});
+
+test('导出存档包含宠物与功法', () => {
+  localStorage.setItem('dxy_pets', JSON.stringify({ owned: { spirit_fish: { level: 2 } }, activePet: 'spirit_fish' }));
+  localStorage.setItem('dxy_techniques', JSON.stringify({ breathing_art: true }));
+  const extras = SaveSystem._collectExtras();
+  localStorage.removeItem('dxy_pets');
+  localStorage.removeItem('dxy_techniques');
+  assert(extras.pets && extras.pets.activePet === 'spirit_fish', '应打包宠物');
+  assert(extras.techniques && extras.techniques.breathing_art, '应打包功法');
+});
+
+test('附属数据可被还原', () => {
+  const n = SaveSystem._restoreExtras({
+    pets: { owned: { little_dog: { level: 1 } }, activePet: 'little_dog' },
+    techniques: { sword_art: true },
+  });
+  assertEq(n, 2, '应还原 2 项');
+  assert(localStorage.getItem('dxy_pets') !== null, '宠物应写回');
+  localStorage.removeItem('dxy_pets');
+  localStorage.removeItem('dxy_techniques');
+});
+
+test('游戏内时钟：1 现实秒 = 1 游戏分钟', () => {
+  WeatherSystem._gameHour = 12;
+  WeatherSystem._gameMinute = 0;
+  WeatherSystem.tick(1.0);          // 1 秒
+  assertClose(WeatherSystem._gameMinute, 1.0, 0.001);
+});
+
+test('事件派发：单个监听器抛错不影响其它监听器', () => {
+  let reached = 0;
+  const bad = () => { throw new Error('boom'); };
+  const good = () => { reached++; };
+  GameEngine.on('__audit_test', bad);
+  GameEngine.on('__audit_test', good);
+  const origError = console.error;
+  console.error = () => {};
+  GameEngine._emit('__audit_test', 1);
+  console.error = origError;
+  GameEngine.off('__audit_test');
+  assertEq(reached, 1, '第二个监听器仍应执行');
+});
+
+test('突破后溢出缓冲结转到新层', () => {
+  GameEngine.state = SaveSystem.createDefault();
+  GameEngine.state.cultivation = calcQ(1, 1, 1.0);
+  GameEngine.state.bufferedCultivation = 15;
+  GameEngine.tryBreakthrough();
+  assert(GameEngine.state.cultivation > 0, `应结转部分修为，实际 ${GameEngine.state.cultivation}`);
+  assert(GameEngine.state.cultivation <= calcQ(1, 2, 1.0) * 0.2 + 0.001, '结转量不超过新层上限 20%');
+});
+
+test('存档版本升级后可迁移而非丢弃', () => {
+  const old = SaveSystem.createDefault();
+  old.version = 0;
+  old.realm = 3;
+  old.level = 4;
+  const migrated = SaveSystem.migrate(old);
+  assert(migrated, '旧版本应可迁移');
+  assertEq(migrated.realm, 3, '境界应保留');
+  assertEq(migrated.version, SaveSystem.VERSION, '应标记为当前版本');
+});
+
+test('脏档缺字段时补默认值而不是崩溃', () => {
+  const dirty = { version: SaveSystem.VERSION, realm: 2, level: 3 }; // 缺 plots / craftingQueue 等
+  const fixed = SaveSystem._ensureShape(dirty);
+  assertEq(fixed.plots.length, GameConfig.maxPlots, '地块数组应补齐');
+  assert(Array.isArray(fixed.craftingQueue), '炼丹队列应为数组');
+  assertEq(fixed.herb, 10, '缺失资源应回落到默认值');
 });
 
 // ===========================

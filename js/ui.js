@@ -334,17 +334,14 @@ const UI = {
     if (!grid) return;
 
     const st = GameEngine.state;
+    // 灵石数字：只在真的变了才写，否则 10Hz 刷新会持续产生字符节点变更
+    const stoneEl = document.getElementById('shop-stone');
+    if (stoneEl && stoneEl.textContent !== String(st.stone)) stoneEl.textContent = st.stone;
+
     const sig = [
       st.stone, st.herb, st.ore, st.dew, GameEngine.unlockedPlots,
     ].join('|');
-    if (!force && !this._sigChanged('shop', sig)) {
-      const el = document.getElementById('shop-stone');
-      if (el) el.textContent = st.stone;
-      return;
-    }
-
-    const stoneEl = document.getElementById('shop-stone');
-    if (stoneEl) stoneEl.textContent = st.stone;
+    if (!force && !this._sigChanged('shop', sig)) return;
 
     const rows = [];
 
@@ -571,20 +568,25 @@ const UI = {
     const moodEl = document.querySelector('.char-mood');
     if (GameEngine._isMeditating) {
       const label = `入定 ×${GameEngine.meditateMultiplier.toFixed(1)}`;
-      if (depthEl) { depthEl.hidden = false; depthEl.textContent = label; }
+      if (depthEl) {
+        if (depthEl.hidden) depthEl.hidden = false;       // 写 hidden 前先判，避免无谓的 attribute 变更
+        if (depthEl.textContent !== label) depthEl.textContent = label;
+      }
       if (moodEl && moodEl.textContent !== label) moodEl.textContent = label;
     } else {
-      if (depthEl) depthEl.hidden = true;
+      if (depthEl && !depthEl.hidden) depthEl.hidden = true;
     }
 
     // 连击显示
     const comboEl = document.getElementById('combo-display');
     const comboCount = document.getElementById('combo-count');
     if (GameEngine._swordCombo > 0) {
-      comboEl.hidden = false;
-      comboCount.textContent = GameEngine._swordCombo;
+      if (comboEl && comboEl.hidden) comboEl.hidden = false;
+      if (comboCount && comboCount.textContent !== String(GameEngine._swordCombo)) {
+        comboCount.textContent = GameEngine._swordCombo;
+      }
     } else {
-      comboEl.hidden = true;
+      if (comboEl && !comboEl.hidden) comboEl.hidden = true;
     }
   },
 
@@ -599,8 +601,13 @@ const UI = {
       const data = SaveSystem.load();
       if (data) {
         GameEngine.state = data;
+        PetSystem.init();
+        TechniqueSystem.init();
+        DailyGoals.init();
+        this._hudCache = {};
+        this._cvCache = {};
         this.showToast('存档已加载');
-        this.refreshAll();
+        this.refreshAll(true);
       } else {
         this.showToast('没有找到存档');
       }
@@ -618,10 +625,21 @@ const UI = {
     document.getElementById('import-file').addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (file) {
-        SaveSystem.importFile(file, (data) => {
+        SaveSystem.importFile(file, (data, err) => {
+          e.target.value = '';            // 允许重复选同一个文件
+          if (!data) {
+            this.showToast(err || '导入失败');
+            return;
+          }
           GameEngine.state = data;
+          // 宠物/功法/日常已由 SaveSystem 写回 localStorage，需重新装载内存态
+          PetSystem.init();
+          TechniqueSystem.init();
+          DailyGoals.init();
+          this._hudCache = {};
+          this._cvCache = {};
           this.showToast('存档已导入');
-          this.refreshAll();
+          this.refreshAll(true);
         });
       }
     });
@@ -714,7 +732,11 @@ const UI = {
         case 'sell': {
           const r = GameEngine.sellOffer(index);
           this.showToast(r.ok ? '成交' : r.msg);
-          if (r.ok) { SoundFX.play('harvest'); Haptic.light(); this._needsFullRebuild = true; }
+          if (r.ok) {
+            SoundFX.play('harvest'); Haptic.light();
+            DailyGoals.increment('sell');
+            this._needsFullRebuild = true;
+          }
           break;
         }
         case 'buy': {
@@ -930,11 +952,15 @@ const UI = {
       ? `${hh} 小时${mm > 0 ? ` ${mm} 分钟` : ''}`
       : `${mm} 分钟`;
     document.getElementById('offline-time').textContent = durationText;
+    const capNote = gains.capped
+      ? `<p class="offline-cap-note">已按离线结算上限 ${gains.capHours} 小时封顶</p>`
+      : '';
     document.getElementById('offline-gains').innerHTML = `
       <div class="gain-row"><span>修为</span><b>+${Math.floor(gains.cultivation)}</b></div>
       <div class="gain-row"><span>灵草</span><b>+${gains.herb}</b></div>
       <div class="gain-row"><span>矿石</span><b>+${gains.ore}</b></div>
       <div class="gain-row"><span>凝露</span><b>+${gains.dew}</b></div>
+      ${capNote}
     `;
     document.getElementById('offline-overlay').hidden = false;
     this._pendingOfflineGains = gains;
@@ -1029,19 +1055,27 @@ UI.refreshDaily = function(force) {
   const container = document.getElementById('daily-list');
   if (!container) return;
 
-  // 徽标始终更新（轻量）
-  const badge = document.getElementById('daily-badge');
-  if (badge) {
-    badge.hidden = DailyGoals.claimableCount === 0;
-    badge.textContent = DailyGoals.claimableCount;
+  const cache = this._dailyCache || (this._dailyCache = {});
+
+  // 徽标：只有可领数量变化时才动 DOM
+  const claimable = DailyGoals.claimableCount;
+  if (cache.claimable !== claimable) {
+    cache.claimable = claimable;
+    const badge = document.getElementById('daily-badge');
+    if (badge) {
+      badge.hidden = claimable === 0;
+      badge.textContent = claimable;
+    }
   }
 
   // 标题汇总：今日已完成 x/3
-  const countEl = document.getElementById('daily-count');
-  if (countEl) {
-    const all = DailyGoals.getAll();
-    const done = all.filter(g => g.claimed).length;
-    countEl.textContent = ` ${done}/${all.length}`;
+  const all0 = DailyGoals.getAll();
+  const done = all0.filter(g => g.claimed).length;
+  const countText = ` ${done}/${all0.length}`;
+  if (cache.countText !== countText) {
+    cache.countText = countText;
+    const countEl = document.getElementById('daily-count');
+    if (countEl) countEl.textContent = countText;
   }
 
   // 签名：目标进度 + 完成/领取状态

@@ -29,8 +29,12 @@ const WeatherSystem = {
   },
 
   tick(dt) {
-    // 更新游戏时间
-    this._gameMinute += dt * (60 / this._timeScale) * 60; // 每秒增加的游戏分钟数
+    // 游戏时间推进
+    // _timeScale = 60 表示「现实 60 秒 = 游戏 1 小时」，即 1 游戏日 = 24 现实分钟。
+    // 原实现多乘了一个 60（dt * 60/timeScale * 60 = dt*60），整个时钟快了 60 倍：
+    // 1 游戏日只要 24 秒，昼夜每 12 秒翻转一次、天气每 24 秒重掷一次，
+    // 既让昼夜/天气的玩法节奏失效，也是天气文本每 tick 都在变、DOM 持续抖动的根因。
+    this._gameMinute += dt * (60 / this._timeScale);
     while (this._gameMinute >= 60) {
       this._gameMinute -= 60;
       this._gameHour++;
@@ -282,7 +286,7 @@ const TechniqueSystem = {
     },
     {
       id: 'heavenly_dao', name: '天道功', icon: '🌈',
-      description: '传说中的至高功法，突破概率大增',
+      description: '传说中的至高功法，突破时破障丹有一半几率不被消耗',
       cost: 1000,
       unlockRealm: 5,
       bonuses: { cultivationRate: 0.20, breakthroughDiscount: 0.5 },

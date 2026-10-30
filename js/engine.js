@@ -111,14 +111,23 @@ const GameEngine = {
 
     // 小阶突破只凭修为与属性；跨大境界才消耗破障丹
     const isMajorJump = this.state.level >= 9;
+    let pillSaved = false;
     if (isMajorJump) {
       if (this.state.breakthroughPill < 1) {
         return { success: false, reason: '跨大境界需破障丹，丹药不足' };
       }
-      this.state.breakthroughPill--;
+      // 天道功「破障丹有一半几率不被消耗」——原实现里 breakthroughDiscount
+      // 只写在数据里、从未被读取，等于该功法的核心卖点是假的。
+      const discount = (typeof TechniqueSystem !== 'undefined')
+        ? (TechniqueSystem.bonuses.breakthroughDiscount || 0)
+        : 0;
+      pillSaved = discount > 0 && Math.random() < discount;
+      if (!pillSaved) this.state.breakthroughPill--;
     }
 
     // 执行突破
+    // 溢出缓冲不再直接丢弃：上限内结转到新一层，避免挂机满仓后突破归零的挫败感
+    const carryOver = this.state.bufferedCultivation || 0;
     this.state.cultivation = 0;
     this.state.bufferedCultivation = 0;
 
@@ -127,6 +136,10 @@ const GameEngine = {
       this.state.level = 1;
       this.state.realm = Math.min(this.state.realm + 1, 6);
     }
+    // 结转量不得超过新层上限的 20%
+    if (carryOver > 0) {
+      this.state.cultivation = Math.min(carryOver, calcQ(this.state.realm, this.state.level, 1.0) * 0.2);
+    }
 
     // 属性成长
     const mult = GameConfig.statGrowthPerRealm;
@@ -134,8 +147,8 @@ const GameEngine = {
     this.state.health = Math.round(this.state.health * mult);
     this.state.mana = Math.round(this.state.mana * mult);
 
-    this._emit('breakthroughSuccess', { realm: this.state.realm, level: this.state.level });
-    return { success: true };
+    this._emit('breakthroughSuccess', { realm: this.state.realm, level: this.state.level, pillSaved });
+    return { success: true, pillSaved };
   },
 
   // 服丹：按当前层上限的百分比回复，避免后期 50 点完全失效
@@ -318,10 +331,16 @@ const GameEngine = {
     this.state.dew -= recipe.dewCost;
     if (recipe.oreCost > 0) this.state.ore -= recipe.oreCost;
 
+    // 炼丹心法「炼丹速度 +25%」——原实现直接取 recipe.craftTime，
+    // craftSpeedBonus 从未参与计算，等于该功法只加了个不存在的说明。
+    const speedBonus = (typeof TechniqueSystem !== 'undefined')
+      ? TechniqueSystem.craftSpeedBonus : 0;
+    const actualTime = Math.max(1, recipe.craftTime * (1 - Math.min(speedBonus, 0.8)));
+
     this.state.craftingQueue.push({
       recipeId: recipeId,
-      timeRemaining: recipe.craftTime,
-      totalTime: recipe.craftTime,
+      timeRemaining: actualTime,
+      totalTime: actualTime,
     });
 
     this._emit('craftingStarted', recipeId);
@@ -345,7 +364,8 @@ const GameEngine = {
     if (!recipe) return;
 
     this._addResource(recipe.result, recipe.amount);
-    this._emit('craftingCompleted', recipe.recipeId);
+    // 原实现传的是 recipe.recipeId（该字段不存在），监听方拿到的一直是 undefined
+    this._emit('craftingCompleted', recipe.id);
   },
 
   // === S4: 打坐/练剑（MECH-005）===
@@ -361,12 +381,24 @@ const GameEngine = {
         // 入定渐深：2.0 → 4.5 倍（45 秒坐满）
         this._depth = Math.min(1, this._depth + dt / GameConfig.meditateDepthSeconds);
         const mult = GameConfig.meditateActiveMult + GameConfig.meditateDepthBonus * this._depth;
-        const baseGain = this.state.pillBoost ? 2 : 1;
-        const extra = baseGain * (mult - 1) * dt;
-        this.state.cultivation = Math.min(
-          this.state.cultivation + extra,
-          calcQ(this.state.realm, this.state.level, 1.0)
-        );
+
+        // 必须在"当前实际速率"上做乘法，而不是加一个每题 1 点/秒的常数。
+        // 原实现：extra = 1 × (mult-1) × dt，境界越高基础速率越大，
+        // 这份固定加成就越被稀释 —— 到渡劫期宣称的 ×4.5 实际只剩 ×1.46。
+        let rate = calcRate(this.state.realm, this._isBackground, this.state.pillBoost);
+        if (typeof PetSystem !== 'undefined') rate *= (1 + PetSystem.cultivationRateBonus);
+        if (typeof TechniqueSystem !== 'undefined') rate *= (1 + TechniqueSystem.cultivationRateBonus);
+        if (typeof WeatherSystem !== 'undefined') rate *= WeatherSystem.meditationMultiplier;
+        rate *= this.daoRateMult;
+
+        const extra = rate * (mult - 1) * dt;
+        const cap = calcQ(this.state.realm, this.state.level, 1.0);
+        const room = cap - this.state.cultivation;
+        if (room > 0) {
+          const gained = Math.min(extra, room);
+          this.state.cultivation += gained;
+          this.state.totalCultivation = (this.state.totalCultivation || 0) + gained;
+        }
       }
     }
 
@@ -407,15 +439,29 @@ const GameEngine = {
       this._swordCombo * GameConfig.swordComboIncrement,
       GameConfig.swordComboMaxMult - 1
     );
-    let gain = GameConfig.swordBaseGain * comboMult;
 
-    // 功法练剑加成
+    // 收益 = 当前修炼速率 × 每次出剑折算的秒数 × 连击倍率。
+    // 原实现用固定点数（3 点/剑）叠加按住连发（5 剑/秒），实际 DPS 达 45 倍挂机速率，
+    // 使灵田/炼丹/打坐全部失去意义；且境界越高固定点数占比越低，收益结构前后矛盾。
+    // 改为速率折算后，练剑恒为约 9 倍挂机速率，与打坐（4.5 倍）形成"要动手 vs 挂着"的选择。
+    let rate = calcRate(this.state.realm, this._isBackground, this.state.pillBoost);
+    if (typeof PetSystem !== 'undefined') rate *= (1 + PetSystem.cultivationRateBonus);
+    if (typeof TechniqueSystem !== 'undefined') rate *= (1 + TechniqueSystem.cultivationRateBonus);
+    if (typeof WeatherSystem !== 'undefined') rate *= WeatherSystem.meditationMultiplier;
+    rate *= this.daoRateMult;
+
+    let gain = rate * GameConfig.swordStrikeSeconds * comboMult;
+
+    // 御剑术：练剑收益额外加成
     if (typeof TechniqueSystem !== 'undefined') {
       gain *= (1 + TechniqueSystem.swordGainBonus);
     }
 
     const cap = calcQ(this.state.realm, this.state.level, 1.0);
-    this.state.cultivation = Math.min(this.state.cultivation + gain, cap);
+    const room = Math.max(0, cap - this.state.cultivation);
+    const actual = Math.min(gain, room);
+    this.state.cultivation += actual;
+    this.state.totalCultivation = (this.state.totalCultivation || 0) + actual;
 
     this._emit('comboChanged', this._swordCombo);
     return gain;
@@ -533,10 +579,25 @@ const GameEngine = {
     this._listeners[event].push(callback);
   },
 
+  off(event, callback) {
+    const arr = this._listeners[event];
+    if (!arr) return;
+    if (!callback) { delete this._listeners[event]; return; }
+    const i = arr.indexOf(callback);
+    if (i >= 0) arr.splice(i, 1);
+  },
+
   _emit(event, data) {
     const handlers = this._listeners[event];
-    if (handlers) {
-      handlers.forEach(fn => fn(data));
+    if (!handlers) return;
+    // 逐个隔离：某个监听器抛错不应该让后续监听器（存档、UI、音效）全部静默失效。
+    // 原实现直接 forEach，一处异常会吞掉整条派发链。
+    for (let i = 0; i < handlers.length; i++) {
+      try {
+        handlers[i](data);
+      } catch (err) {
+        console.error(`[GameEngine] listener error on "${event}":`, err);
+      }
     }
   },
 };

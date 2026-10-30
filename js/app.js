@@ -162,6 +162,45 @@
       SaveSystem.save(GameEngine.state);
     });
 
+    // 7.5 灵石累计（日常「累计获得灵石」）—— 卖出、访客、奖励都算，统一在这里观察
+    let lastStone = GameEngine.state.stone;
+    GameEngine.on('tick', () => {
+      const now = GameEngine.state.stone;
+      if (now > lastStone) DailyGoals.increment('collect', now - lastStone);
+      lastStone = now;
+    });
+
+    // 7.6 成熟提醒：灵田不在当前标签页时给一次轻提示（20 秒内最多一次）
+    let lastReadyToast = 0;
+    GameEngine.on('plotReady', () => {
+      const now = Date.now();
+      if (now - lastReadyToast < 20000) return;
+      if (UI._currentTab === 'farming') return;   // 已经看着灵田就不用提醒
+      lastReadyToast = now;
+      UI.showToast('灵田有作物成熟，可收获');
+    });
+
+    // 7.7 仓库满提示（30 秒内最多一次，避免刷屏）
+    let lastFullToast = 0;
+    GameEngine.on('resourceFull', (type) => {
+      const now = Date.now();
+      if (now - lastFullToast < 30000) return;
+      lastFullToast = now;
+      const nameMap = { herb: '灵草', ore: '矿石', dew: '凝露', stone: '灵石' };
+      UI.showToast(`${nameMap[type] || '资源'}已达上限，记得兑换或消耗`);
+    });
+
+    // 7.8 修为满仓提醒：同一层只提醒一次，避免挂机时反复弹
+    let cappedLevelKey = '';
+    GameEngine.on('tick', () => {
+      const s = GameEngine.state;
+      const key = `${s.realm}-${s.level}`;
+      if (s.cultivation < calcQ(s.realm, s.level, 1.0)) { cappedLevelKey = ''; return; }
+      if (cappedLevelKey === key) return;
+      cappedLevelKey = key;
+      UI.showToast('修为已满，可以突破了');
+    });
+
     // 9. 移动端手势优化：禁止双击缩放（只对非交互元素生效，不阻断按钮点击）
     let lastTouchEnd = 0;
     document.addEventListener('touchend', (e) => {

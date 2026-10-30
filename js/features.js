@@ -11,16 +11,20 @@ const DailyGoals = {
   _goals: [],
   _lastResetDate: '',
 
-  // 任务池（4 类）
+  // 任务池
+  // key  = 进度上报用的唯一标识（increment 按 key 匹配，必须与调用方完全一致）
+  // type = 仅用于分类展示，不参与匹配
+  // 修复记录：原实现 increment 传的是 'plant'/'harvest' 这类动作名，而匹配用的是
+  // goal.type（farming/alchemy/...），6 个调用点全部匹配不上，系统整体失效。
   _taskPool: [
-    { id: 'plant_3',       type: 'farming',    name: '种植 3 株灵草',       target: 3,    reward: 20, icon: '🌱' },
-    { id: 'harvest_3',     type: 'farming',    name: '收获 3 株灵草',       target: 3,    reward: 30, icon: '🌾' },
-    { id: 'craft_1',       type: 'alchemy',    name: '炼制 1 炉丹药',       target: 1,    reward: 50, icon: '🔥' },
-    { id: 'meditate_5',    type: 'cultivation', name: '打坐累计 5 分钟',    target: 300,  reward: 40, icon: '🧘', unit: '秒' },
-    { id: 'sword_10',      type: 'cultivation', name: '练剑 10 次',         target: 10,   reward: 30, icon: '⚔️' },
-    { id: 'breakthrough_1', type: 'cultivation', name: '突破 1 次',          target: 1,    reward: 100, icon: '⚡' },
-    { id: 'sell_5',        type: 'economy',    name: '出售 5 份材料',       target: 5,    reward: 25, icon: '💰' },
-    { id: 'collect_10',    type: 'economy',    name: '累计获得 10 灵石',   target: 10,   reward: 15, icon: '💎' },
+    { id: 'plant_3',       key: 'plant',        type: 'farming',     name: '种植 3 株灵草',     target: 3,    reward: 20,  icon: '🌱' },
+    { id: 'harvest_3',     key: 'harvest',      type: 'farming',     name: '收获 3 株灵草',     target: 3,    reward: 30,  icon: '🌾' },
+    { id: 'craft_1',       key: 'craft',        type: 'alchemy',     name: '炼制 1 炉丹药',     target: 1,    reward: 50,  icon: '🔥' },
+    { id: 'meditate_5',    key: 'meditate',     type: 'cultivation', name: '打坐累计 5 分钟',   target: 300,  reward: 40,  icon: '🧘', unit: '秒' },
+    { id: 'sword_10',      key: 'sword',        type: 'cultivation', name: '练剑 10 次',        target: 10,   reward: 30,  icon: '⚔️' },
+    { id: 'breakthrough_1', key: 'breakthrough', type: 'cultivation', name: '突破 1 次',         target: 1,    reward: 100, icon: '⚡' },
+    { id: 'sell_5',        key: 'sell',         type: 'economy',     name: '出售 5 份材料',     target: 5,    reward: 25,  icon: '💰' },
+    { id: 'collect_10',    key: 'collect',      type: 'economy',     name: '累计获得 10 灵石',  target: 10,   reward: 15,  icon: '💎' },
   ],
 
   init() {
@@ -30,15 +34,40 @@ const DailyGoals = {
     if (!saved || saved.date !== today) {
       this._reset(today);
     } else {
-      this._goals = saved.goals;
+      // 兼容旧存档：早期 goal 只有 type 没有 key，靠 id 反查补齐，
+      // 否则读档后当天剩余的目标仍然无法推进。
+      this._goals = saved.goals.map(g => {
+        if (g.key) return g;
+        const def = this._taskPool.find(t => t.id === g.id);
+        return { ...g, key: def ? def.key : g.id, type: def ? def.type : g.type };
+      });
       this._lastResetDate = saved.date;
     }
   },
 
   _reset(date) {
-    // 从任务池随机抽 3 个
-    const shuffled = [...this._taskPool].sort(() => Math.random() - 0.5);
-    this._goals = shuffled.slice(0, 3).map(g => ({
+    // Fisher-Yates 洗牌：原实现用 sort(() => Math.random() - 0.5)，
+    // 分布有偏（比较函数不自洽），会让排在前面的任务更容易被抽中。
+    const pool = [...this._taskPool];
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    // 保证 3 个任务来自不同分类，避免抽到 3 个 farming 这种同质组合
+    const picked = [];
+    const usedType = new Set();
+    for (const t of pool) {
+      if (picked.length >= 3) break;
+      if (usedType.has(t.type)) continue;
+      usedType.add(t.type);
+      picked.push(t);
+    }
+    for (const t of pool) {
+      if (picked.length >= 3) break;
+      if (!picked.includes(t)) picked.push(t);
+    }
+
+    this._goals = picked.map(g => ({
       ...g,
       progress: 0,
       completed: false,
@@ -49,19 +78,47 @@ const DailyGoals = {
     console.log('[DailyGoals] Reset for ' + date);
   },
 
-  /** 记录进度 */
-  increment(taskType, amount) {
+  /** 记录进度（按 key 匹配） */
+  increment(taskKey, amount) {
     amount = amount || 1;
+    let changed = false;
     this._goals.forEach(goal => {
-      if (goal.type === taskType && !goal.completed) {
+      if (goal.key === taskKey && !goal.completed) {
         goal.progress = Math.min(goal.progress + amount, goal.target);
+        changed = true;
         if (goal.progress >= goal.target) {
           goal.completed = true;
           GameEngine._emit('notification', `日常目标完成：${goal.name}`);
+          this._saveNow();      // 完成是重要节点，立即落盘
+          return;
         }
       }
     });
-    this._save();
+    if (changed) this._save();  // 节流写入，见 _save
+    return changed;
+  },
+
+  /** 节流保存：打坐进度每 tick 都会推进，逐次写 localStorage 会阻塞主线程 */
+  _save() {
+    const now = Date.now();
+    if (now - (this._lastSaveAt || 0) < 3000) {
+      this._pendingSave = true;
+      clearTimeout(this._saveTimer);
+      this._saveTimer = setTimeout(() => this._saveNow(), 3000);
+      return;
+    }
+    this._saveNow();
+  },
+
+  _saveNow() {
+    this._lastSaveAt = Date.now();
+    this._pendingSave = false;
+    try {
+      localStorage.setItem('dxy_daily_goals', JSON.stringify({
+        date: this._lastResetDate,
+        goals: this._goals,
+      }));
+    } catch (e) { /* ignore */ }
   },
 
   /** 领取奖励 */
@@ -75,7 +132,7 @@ const DailyGoals = {
     const cap = calcQ(state.realm, state.level, 1.0);
     state.cultivation = Math.min(state.cultivation + goal.reward, cap);
 
-    this._save();
+    this._saveNow();
     return true;
   },
 
@@ -87,15 +144,6 @@ const DailyGoals = {
   /** 已完成未领取数量 */
   get claimableCount() {
     return this._goals.filter(g => g.completed && !g.claimed).length;
-  },
-
-  _save() {
-    try {
-      localStorage.setItem('dxy_daily_goals', JSON.stringify({
-        date: this._lastResetDate,
-        goals: this._goals,
-      }));
-    } catch (e) { /* ignore */ }
   },
 
   _load() {
@@ -191,8 +239,11 @@ const VisitorSystem = {
     if (this._visitorCount >= 2) return null;
     if (this._currentVisitor) return null;
 
-    // 随机概率（每次 tick 约 0.5%，平均每 ~3 分钟尝试）
-    if (Math.random() > 0.01) return null;
+    // 基础出现概率 1%/次检测（每 5 秒检测一次），小黄狗「访客频率 +50%」在此生效。
+    // 原实现直接拿常量 0.01 比较，visitorRateBonus 从未参与，宠物卖点是假的。
+    const rateBonus = (typeof PetSystem !== 'undefined') ? PetSystem.visitorRateBonus : 0;
+    const chance = Math.min(0.01 * (1 + rateBonus), 0.25);
+    if (Math.random() > chance) return null;
 
     // 随机选一个访客
     const visitor = this._visitors[Math.floor(Math.random() * this._visitors.length)];

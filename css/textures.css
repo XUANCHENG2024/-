@@ -1,11 +1,10 @@
-/*
+/**
  * 桌面修仙 · 贴图内联
  *
- * 三张 webp 以 base64 内联为 CSS 变量，使仓库纯文本化：
+ * 由 tools/sync-web-repo.py 自动生成，请勿手工编辑。
+ * 三张 webp 以 base64 内联为 CSS 变量，使仓库保持纯文本：
  * GitHub REST 接口无法携带二进制内容，内联后整个站点可只靠文本文件重建。
- * 原始素材仍保留在本地工程的 assets/tex/ 下（未纳入本仓库）。
- *
- * 生成方式：base64 -w0 assets/tex/*.webp，包裹为 url("data:image/webp;base64,...")
+ * 原始素材在本地工程的 assets/tex/ 下（未纳入本仓库）。
  */
 
 :root {

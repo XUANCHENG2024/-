@@ -83,21 +83,103 @@ const SaveSystem = {
       if (!json) return null;
 
       const data = JSON.parse(json);
-      if (!data || data.version !== this.VERSION) {
-        console.warn('[SaveSystem] Version mismatch, trying backup');
-        return this._loadFromBackup();
+      if (!data) return this._loadFromBackup();
+      if (data.version !== this.VERSION) {
+        // 旧实现：版本号不一致直接丢弃并回退备份，没有迁移路径 —— 一次版本升级
+        // 就可能让所有玩家进度归零。改为先尝试迁移。
+        const migrated = this.migrate(data);
+        if (!migrated) {
+          console.warn('[SaveSystem] Unmigratable save, trying backup');
+          return this._loadFromBackup();
+        }
+        console.info(`[SaveSystem] Migrated save v${data.version} → v${this.VERSION}`);
+        return migrated;
       }
-      return data;
+      return this._ensureShape(data);
     } catch (e) {
       console.error('[SaveSystem] Load failed:', e);
       return this._loadFromBackup();
     }
   },
 
+  /**
+   * 把任意历史版本补齐成当前结构。
+   * 返回 null 表示无法识别。
+   */
+  migrate(data) {
+    if (!data || typeof data !== 'object') return null;
+    if (typeof data.realm !== 'number' || typeof data.level !== 'number') return null;
+
+    const v = typeof data.version === 'number' ? data.version : 0;
+    if (v > this.VERSION) return null;   // 未来版本的存档不强行降级
+
+    const base = this.createDefault();
+    const merged = { ...base, ...data, version: this.VERSION };
+    return this._ensureShape(merged);
+  },
+
+  /** 结构兜底：字段缺失或类型不对时补默认值，避免读到脏档后整局崩溃 */
+  _ensureShape(data) {
+    const base = this.createDefault();
+    const out = { ...base, ...data };
+    out.version = this.VERSION;   // 迁移完成后统一标记为当前版本
+
+    out.realm = Math.min(Math.max(1, Number(out.realm) || 1), 6);
+    out.level = Math.min(Math.max(1, Number(out.level) || 1), 9);
+    out.cultivation = Math.max(0, Number(out.cultivation) || 0);
+    out.bufferedCultivation = Math.max(0, Number(out.bufferedCultivation) || 0);
+    out.dao = Math.max(0, Number(out.dao) || 0);
+    out.rebirths = Math.max(0, Number(out.rebirths) || 0);
+    out.totalCultivation = Math.max(0, Number(out.totalCultivation) || 0);
+
+    for (const k of ['stone', 'herb', 'ore', 'dew', 'cultivationPill', 'breakthroughPill']) {
+      out[k] = Math.max(0, Math.floor(Number(out[k]) || 0));
+    }
+
+    out.unlockedPlots = Math.min(
+      Math.max(GameConfig.startingPlots, Number(out.unlockedPlots) || GameConfig.startingPlots),
+      GameConfig.maxPlots
+    );
+
+    // 地块数组必须够长且结构完整，否则 tick 里读 plot.state 会抛错
+    if (!Array.isArray(out.plots) || out.plots.length < GameConfig.maxPlots) {
+      const plots = Array(GameConfig.maxPlots).fill(null).map((_, i) =>
+        out.plots && out.plots[i] ? out.plots[i] : { state: 'empty', cropId: null, growthProgress: 0, growthTime: 0, watered: false }
+      );
+      out.plots = plots;
+    }
+    out.plots = out.plots.slice(0, GameConfig.maxPlots).map(p => ({
+      state: p && p.state ? p.state : 'empty',
+      cropId: p && p.cropId ? p.cropId : null,
+      growthProgress: Math.max(0, Number(p && p.growthProgress) || 0),
+      growthTime: Math.max(0, Number(p && p.growthTime) || 0),
+      watered: !!(p && p.watered),
+    }));
+
+    if (!Array.isArray(out.craftingQueue)) out.craftingQueue = [];
+    out.craftingQueue = out.craftingQueue
+      .filter(j => j && typeof j.recipeId === 'string')
+      .slice(0, GameConfig.maxCraftQueue)
+      .map(j => ({
+        recipeId: j.recipeId,
+        timeRemaining: Math.max(0, Number(j.timeRemaining) || 0),
+        totalTime: Math.max(1, Number(j.totalTime) || 1),
+      }));
+
+    return out;
+  },
+
   /** 导出存档为 JSON 文件 */
   exportFile(gameState) {
     try {
-      const json = JSON.stringify(gameState, null, 2);
+      // 宠物 / 功法 / 日常目标存在各自的 localStorage 键里，
+      // 原实现只序列化 gameState，导出的备份里没有这三块，
+      // 换设备导入后宠物和功法全部丢失。这里一并打包。
+      const payload = {
+        ...gameState,
+        _extras: this._collectExtras(),
+      };
+      const json = JSON.stringify(payload, null, 2);
       const filename = `desktop_xianxia_${new Date().toISOString().slice(0, 10)}.json`;
 
       if (typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
@@ -123,36 +205,102 @@ const SaveSystem = {
     }
   },
 
+  /** 收集主存档之外的附属数据（宠物 / 功法 / 日常） */
+  _collectExtras() {
+    const extras = {};
+    for (const [key, field] of [
+      ['dxy_pets', 'pets'],
+      ['dxy_techniques', 'techniques'],
+      ['dxy_daily_goals', 'daily'],
+    ]) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw) extras[field] = JSON.parse(raw);
+      } catch (e) { /* ignore */ }
+    }
+    return extras;
+  },
+
+  /** 还原附属数据 */
+  _restoreExtras(extras) {
+    if (!extras || typeof extras !== 'object') return 0;
+    let n = 0;
+    for (const [key, field] of [
+      ['dxy_pets', 'pets'],
+      ['dxy_techniques', 'techniques'],
+      ['dxy_daily_goals', 'daily'],
+    ]) {
+      if (extras[field] === undefined) continue;
+      try {
+        localStorage.setItem(key, JSON.stringify(extras[field]));
+        n++;
+      } catch (e) { /* ignore */ }
+    }
+    return n;
+  },
+
   /** 从 JSON 文件导入存档 */
   importFile(file, callback) {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
         const data = JSON.parse(e.target.result);
-        if (data && data.version === this.VERSION) {
-          callback(data);
-        } else {
-          alert('存档版本不兼容');
+        if (!data || typeof data !== 'object') throw new Error('not an object');
+
+        // 版本迁移：不再因为版本号不同就直接判定"不兼容"
+        const migrated = this.migrate(data);
+        if (!migrated) {
+          callback(null, '存档版本不兼容');
+          return;
         }
+        // 先还原附属数据，再交给调用方替换主状态
+        if (migrated._extras) {
+          this._restoreExtras(migrated._extras);
+          delete migrated._extras;
+        }
+        callback(migrated, null);
       } catch (err) {
-        alert('存档文件格式错误');
+        callback(null, '存档文件格式错误');
       }
     };
+    reader.onerror = () => callback(null, '读取文件失败');
     reader.readAsText(file);
   },
 
   /** 计算离线收益 */
   calculateOfflineGains(gameState, currentTime) {
     const lastSave = gameState.lastSaveTicks || 0;
-    const elapsed = Math.min((currentTime - lastSave) / 1000, GameConfig.offlineCapSeconds);
+
+    // 灵龟「离线上限 +2 小时」——原实现只读 GameConfig.offlineCapSeconds，
+    // PetSystem.offlineCapBonus 定义了却没人调用。
+    const petCapBonus = (typeof PetSystem !== 'undefined') ? PetSystem.offlineCapBonus : 0;
+    const capSeconds = GameConfig.offlineCapSeconds + petCapBonus;
+
+    const elapsed = Math.min((currentTime - lastSave) / 1000, capSeconds);
     if (elapsed < 10) return null; // 不足10秒不计算
 
     const R = gameState.realm;
-    const rate = calcRate(R, true, false); // 后台速率
+    // 离线速率必须与在线同源：原实现只用了 calcRate(bg)，漏掉了宠物、功法、
+    // 道行三层加成，导致挂着不动反而比上线更亏。
+    let rate = calcRate(R, true, false); // 后台速率
+    if (typeof PetSystem !== 'undefined') rate *= (1 + PetSystem.cultivationRateBonus);
+    if (typeof TechniqueSystem !== 'undefined') rate *= (1 + TechniqueSystem.cultivationRateBonus);
+    rate *= 1 + (gameState.dao || 0) * GameConfig.rebirth.daoRatePerPoint;
+    if (gameState.pillBoost) rate *= GameConfig.pillBoostMult;
+
     const cultivationGain = rate * elapsed;
 
-    // 资源产出（灵草/矿石/凝露被动产出）
-    const herbGain = Math.floor(GameConfig.herbPerHourPerPlot * GameConfig.startingPlots * elapsed / 3600);
+    // 灵草产出必须按"已开垦地块数"算，原实现写死 startingPlots，
+    // 玩家把灵田扩到 8 块后离线收益仍按 3 块结。
+    const plots = Math.min(
+      Math.max(GameConfig.startingPlots, gameState.unlockedPlots || GameConfig.startingPlots),
+      GameConfig.maxPlots
+    );
+    const herbMult = (typeof PetSystem !== 'undefined' ? PetSystem.herbMultiplier : 1)
+      * (1 + (typeof TechniqueSystem !== 'undefined' ? TechniqueSystem.herbBonus : 0))
+      * (1 + (gameState.dao || 0) * GameConfig.rebirth.daoHerbPerPoint);
+
+    const herbGain = Math.floor(GameConfig.herbPerHourPerPlot * plots * herbMult * elapsed / 3600);
     const oreGain = Math.floor(GameConfig.orePerHour * elapsed / 3600);
     const dewGain = Math.floor(GameConfig.dewPerHour * elapsed / 3600);
 
@@ -162,14 +310,16 @@ const SaveSystem = {
       herb: herbGain,
       ore: oreGain,
       dew: dewGain,
+      capped: (currentTime - lastSave) / 1000 > capSeconds,
+      capHours: +(capSeconds / 3600).toFixed(1),
     };
   },
 
-  /** 创建备份 */
+  /** 创建备份（顺序轮转，避免 Date.now()%3 反复命中同一槽） */
   _createBackup(json) {
     try {
-      const backupIndex = (Date.now() % this.MAX_BACKUPS);
-      localStorage.setItem(this.BACKUP_KEY + backupIndex, json);
+      this._backupSlot = ((this._backupSlot || 0) + 1) % this.MAX_BACKUPS;
+      localStorage.setItem(this.BACKUP_KEY + this._backupSlot, json);
     } catch (e) {
       console.warn('[SaveSystem] Backup failed:', e);
     }
@@ -182,7 +332,9 @@ const SaveSystem = {
         const json = localStorage.getItem(this.BACKUP_KEY + i);
         if (json) {
           const data = JSON.parse(json);
-          if (data && data.version === this.VERSION) return data;
+          if (data && data.version === this.VERSION) return this._ensureShape(data);
+          const migrated = this.migrate(data);
+          if (migrated) return migrated;
         }
       } catch (e) { /* continue */ }
     }

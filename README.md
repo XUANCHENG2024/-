@@ -68,13 +68,19 @@ python -m http.server 8000
 
 ```bash
 npm install        # 只装 jsdom，用于 DOM 测试
-npm test           # 71 项单元测试
+npm test           # 85 项单元测试
 npm run e2e        # 47 项真实点击测试
 npm run validate   # 20 项数值校验
 npm run balance    # 经济模拟
+npm run audit      # 六维体检（玩法完整性/数值/经济/交互/性能/健壮性）
+npm run bench      # UI 刷新基准
 ```
 
-`e2e-test.js` 用 jsdom 真的派发 `click` / `touchend` 事件，专门覆盖一类问题：
+`audit.js` 是给这个项目专门写的体检工具，专治一类最难发现的缺陷：**功能做完了，但没接上**。
+它会比对"引擎层实现了什么"与"界面/调用方用了什么"，把从未被消费的加成、永远无法完成的日常任务、
+无人监听的事件、每帧无条件写 DOM 的热点全部列出来。首轮运行就挖出 4 个 P0。
+
+`e2e-test.js` 用 jsdom 真的派发 `click` / `touchend` 事件，专门覆盖另一类问题：
 **按钮看着在、点下去没反应**。历史上有过一次全站点击失效，根因是
 `.modal-overlay { display: flex }` 覆盖了浏览器默认的 `[hidden] { display: none }`，
 三个全屏遮罩永久可见并吞掉了所有点击——所以 `style.css` 里有一条

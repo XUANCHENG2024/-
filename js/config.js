@@ -34,11 +34,7 @@ const GameConfig = {
   dewPerHour: 6,        // 在线被动累积（雨天 ×2）
   dewRainMult: 2,       // 雨天凝露翻倍（呼应天气系统）
   oreNightMult: 1.2,    // 夜间矿石略增
-  herbSellPrice: 2,
-  herbSoftCap: 200,
-  oreSoftCap: 100,
-  dewSoftCap: 50,
-  resourceHardCap: 999,
+  resourceHardCap: 999, // 单一资源上限（超出部分丢弃并提示）
   stoneHardCap: 999999,
 
   // === 种植（MECH-003）===
@@ -69,17 +65,13 @@ const GameConfig = {
   // === 炼丹（MECH-004）===
   maxCraftQueue: 3,
 
-  // === 掉率（NUM-004）===
-  visitorDropRates: {
-    herb_seed: { rate: 0.45, pity: 0 },
-    dew:       { rate: 0.30, pity: 0 },
-    ore:       { rate: 0.15, pity: 8 },
-    breakthrough_pill: { rate: 0.03, pity: 30 },
-  },
+  // === 掉率 ===
+  // 说明：访客的实际产出写在 VisitorSystem._visitors[].options[].reward 里（固定值，
+  // 便于玩家在选项上看到"给什么、换什么"）。这里原先保留的 visitorDropRates 概率表
+  // 从未被任何代码读取，已移除，避免调数值时误以为改它有用。
 
   // === 后台模式（MECH-008）===
-  bgTargetFps: 1,
-  offlineCapSeconds: 8 * 3600, // 8小时
+  offlineCapSeconds: 8 * 3600, // 离线结算上限 8 小时（灵龟可再加 2 小时）
 
   // === 轮回（转生）===
   // 渡劫 9 层且修为圆满后可入轮回：重置境界与资源，换永久「道行」
@@ -120,7 +112,11 @@ const GameConfig = {
   ],
 
   // === 练剑参数（MECH-005）===
-  swordBaseGain: 3,
+  // 收益不再用固定点数，而是"当前修炼速率 × 每次出剑折算的秒数"，
+  // 与打坐同单位（都表示为挂机速率的倍数），避免境界越高练剑越鸡肋。
+  // 折算比：swordStrikeSeconds × (1/间隔) × 连击上限
+  //         = 0.4 × 5 × 3 ≈ 6 倍挂机速率（打坐 60 秒循环均值约 2.9 倍）
+  swordStrikeSeconds: 0.4,
   swordComboWindow: 5,
   swordComboIncrement: 0.1,
   swordComboMaxMult: 3.0,
@@ -140,11 +136,13 @@ const GameConfig = {
  * @returns {number} 修为需求点数
  */
 function calcQ(R, r, gamma) {
-  gamma = gamma || 1.0;
+  // gamma 是动态修正项，必须夹在 [gammaMin, gammaMax] 内，
+  // 否则外部传错一个系数就会让整条成长曲线失准。
+  const g = Math.min(Math.max(gamma || 1.0, GameConfig.gammaMin), GameConfig.gammaMax);
   return GameConfig.Q0
     * Math.pow(1 + GameConfig.alpha, R - 1)
     * (1 + GameConfig.beta * (r - 1))
-    * gamma;
+    * g;
 }
 
 /**
