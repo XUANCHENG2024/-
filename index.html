@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1C1F24">
+  <title>桌面修仙 · 移动版</title>
+  <link rel="stylesheet" href="css/textures.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- ===== 图标精灵（线性矢量，1.6px 描边，随文字色）===== -->
+  <svg class="svg-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-cultivate" viewBox="0 0 24 24"><path d="M12 3.2 13.9 9.6 20.4 11.5 13.9 13.4 12 19.8 10.1 13.4 3.6 11.5 10.1 9.6 12 3.2Z"/></symbol>
+    <symbol id="i-farm" viewBox="0 0 24 24"><path d="M12 21v-7.5"/><path d="M12 13.5c0-4 2.9-7 6.8-7 0 4-2.9 7-6.8 7Z"/><path d="M12 15.2c0-3-2.4-5.4-5.4-5.4 0 3 2.4 5.4 5.4 5.4Z"/></symbol>
+    <symbol id="i-alchemy" viewBox="0 0 24 24"><path d="M9.6 3.2h4.8"/><path d="M10.8 3.2v4.6l-4.6 8.4a2.6 2.6 0 0 0 2.3 3.9h7a2.6 2.6 0 0 0 2.3-3.9l-4.6-8.4V3.2"/><path d="M8.2 15.6h7.6"/></symbol>
+    <symbol id="i-daily" viewBox="0 0 24 24"><rect x="4.8" y="4.4" width="14.4" height="16.4" rx="2.4"/><path d="M9.2 4.4V3.2h5.6v1.2"/><path d="M8.6 10.2h6.8M8.6 14h6.8M8.6 17.8h4"/></symbol>
+    <symbol id="i-pet" viewBox="0 0 24 24"><circle cx="8.2" cy="7.8" r="1.9"/><circle cx="15.8" cy="7.8" r="1.9"/><circle cx="5.2" cy="12.2" r="1.7"/><circle cx="18.8" cy="12.2" r="1.7"/><path d="M12 11.8c2.2 0 4.6 2.7 4.6 5.2 0 1.6-1.3 2.6-2.9 2.3-1-.2-2.3-.2-3.4 0-1.6.3-2.9-.7-2.9-2.3 0-2.5 2.4-5.2 4.6-5.2Z"/></symbol>
+    <symbol id="i-tech" viewBox="0 0 24 24"><path d="M12 6.6C10.4 5 7.9 4.4 4.4 4.4v13.2C7.9 17.6 10.4 18.2 12 19.8c1.6-1.6 4.1-2.2 7.6-2.2V4.4c-3.5 0-6 .6-7.6 2.2Z"/><path d="M12 6.6v13.2"/></symbol>
+    <symbol id="i-system" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.1"/><path d="M12 3.4v2.1M12 18.5v2.1M3.4 12h2.1M18.5 12h2.1M5.9 5.9l1.5 1.5M16.6 16.6l1.5 1.5M18.1 5.9l-1.5 1.5M7.4 16.6l-1.5 1.5"/></symbol>
+    <symbol id="i-stone" viewBox="0 0 24 24"><path d="M12 3.4 4.9 9.6 12 20.6l7.1-11L12 3.4Z"/><path d="M4.9 9.6h14.2"/></symbol>
+    <symbol id="i-herb" viewBox="0 0 24 24"><path d="M12 20.8V9.4"/><path d="M12 12.2c3.3 0 5.8-2.4 5.8-5.8-3.3 0-5.8 2.4-5.8 5.8Z"/><path d="M12 14.6c-2.8 0-5.1-2.1-5.1-5.1 2.8 0 5.1 2.1 5.1 5.1Z"/></symbol>
+    <symbol id="i-ore" viewBox="0 0 24 24"><path d="M5.8 15.2 8.9 6.2h6.2l3.1 9-6.2 4.8-6.2-4.8Z"/><path d="M8.9 6.2 12 10.2l3.1-4M12 10.2v9.8"/></symbol>
+    <symbol id="i-dew" viewBox="0 0 24 24"><path d="M12 3.6c3 4 5.4 6.9 5.4 9.8a5.4 5.4 0 0 1-10.8 0c0-2.9 2.4-5.8 5.4-9.8Z"/></symbol>
+    <symbol id="i-pill" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.8"/><path d="M9.4 9.6c1.6 1.6 1.6 3.2 0 4.8M14.6 14.4c-1.6-1.6-1.6-3.2 0-4.8"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.8"/><path d="M12 2.6v2.2M12 19.2v2.2M2.6 12h2.2M19.2 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M18.7 5.3l-1.6 1.6M6.9 17.1l-1.6 1.6"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.2 14.8A8.6 8.6 0 0 1 9.2 3.8a8.6 8.6 0 1 0 11 11Z"/></symbol>
+    <symbol id="i-meditate" viewBox="0 0 24 24"><circle cx="12" cy="6.2" r="2.3"/><path d="M12 9.2v3.9"/><path d="M6.4 20.2c1.6-3 3.4-4.6 5.6-4.6s4 1.6 5.6 4.6"/><path d="M8.1 12.4 5.1 14.6M15.9 12.4l3 2.2"/></symbol>
+    <symbol id="i-sword" viewBox="0 0 24 24"><path d="M18.6 4.4 9.2 13.8l-1.4 4.4 4.4-1.4 9.4-9.4V4.4h-3Z"/><path d="M6.2 17.8 4.2 19.8"/></symbol>
+    <symbol id="i-furnace" viewBox="0 0 24 24"><path d="M5.2 10.2h13.6l-1.4 9.2a2 2 0 0 1-2 1.6H8.6a2 2 0 0 1-2-1.6L5.2 10.2Z"/><path d="M8.2 10.2V7.2a3.8 3.8 0 0 1 7.6 0v3"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6.4 6.4l11.2 11.2M17.6 6.4 6.4 17.6"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5.2 5.2h10.2l3.4 3.4v10.2H5.2V5.2Z"/><path d="M8.4 5.2v4.6h6.2V5.2"/><rect x="8" y="13.2" width="8" height="5.6" rx="1"/></symbol>
+    <symbol id="i-load" viewBox="0 0 24 24"><path d="M4.6 19.4h14.8"/><path d="M12 4.2v10.4"/><path d="M8.2 8.2 12 4.4l3.8 3.8"/></symbol>
+    <symbol id="i-export" viewBox="0 0 24 24"><path d="M4.6 19.4h14.8"/><path d="M12 14.6V4.2"/><path d="M8.2 10.6 12 14.4l3.8-3.8"/></symbol>
+    <symbol id="i-import" viewBox="0 0 24 24"><path d="M4.6 19.4h14.8"/><path d="M12 4.2v10.4"/><path d="M8.2 10.6 12 14.4l3.8-3.8"/></symbol>
+    <symbol id="i-claim" viewBox="0 0 24 24"><path d="M4.4 12.6 9.2 17.4 19.6 6.6"/></symbol>
+    <symbol id="i-crop-grass" viewBox="0 0 24 24"><path d="M12 20.6V10.4"/><path d="M12 13.2c3 0 5.4-2.2 5.4-5.3C14.4 7.9 12 10.1 12 13.2Z"/><path d="M12 16.2c-2.6 0-4.7-1.9-4.7-4.7C9.9 11.5 12 13.4 12 16.2Z"/><path d="M7.4 20.6h9.2"/></symbol>
+    <symbol id="i-crop-chrys" viewBox="0 0 24 24"><circle cx="12" cy="8.6" r="2.5"/><path d="M12 6.1V4.2M14.1 7.3l1.4-1.4M14.1 9.9l1.4 1.4M12 11.1v2.1M9.9 9.9 8.5 11.3M9.9 7.3 8.5 5.9"/><path d="M12 13.2v7.4"/><path d="M12 17.4c2.1 0 3.6-1.5 3.6-3.6"/></symbol>
+    <symbol id="i-crop-lotus" viewBox="0 0 24 24"><path d="M12 5c-2.1 2-3.3 4-3.3 6 0 2.1 1.5 3.7 3.3 3.7s3.3-1.6 3.3-3.7c0-2-1.2-4-3.3-6Z"/><path d="M8.7 8.2C6.6 9.2 5.2 10.7 5.2 12.4c0 1.5 1.1 2.7 2.6 2.7"/><path d="M15.3 8.2c2.1 1 3.5 2.5 3.5 4.2 0 1.5-1.1 2.7-2.6 2.7"/><path d="M4.8 18.4h14.4"/></symbol>
+    <symbol id="i-breath" viewBox="0 0 24 24"><path d="M3.6 9.4c2.1-2.9 4.2-2.9 6.3 0s4.2 2.9 6.3 0"/><path d="M3.6 14.6c2.1-2.9 4.2-2.9 6.3 0s4.2 2.9 6.3 0"/><circle cx="19.6" cy="9.4" r=".9"/><circle cx="19.6" cy="14.6" r=".9"/></symbol>
+    <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3.4c3 3.4 5.3 5.9 5.3 9.1A5.3 5.3 0 0 1 12 17.8a5.3 5.3 0 0 1-5.3-5.3c0-3.2 2.3-5.7 5.3-9.1Z"/><path d="M12 12.4c1 1.2 1.6 2.1 1.6 2.9a1.6 1.6 0 0 1-3.2 0c0-.8.6-1.7 1.6-2.9Z"/></symbol>
+    <symbol id="i-array" viewBox="0 0 24 24"><path d="M12 3.6 19.4 8v8L12 20.4 4.6 16V8L12 3.6Z"/><circle cx="12" cy="12" r="2.1"/><path d="M12 9.9V5.6M12 14.1v4.3M9.9 12H5.6M14.1 12h4.3"/></symbol>
+    <symbol id="i-dao" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2"/><path d="M12 3.8a4.1 4.1 0 0 1 0 8.2 4.1 4.1 0 0 0 0 8.2"/><circle cx="12" cy="7.9" r=".85"/><circle cx="12" cy="16.1" r=".85"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.6" y="10.4" width="12.8" height="9.2" rx="2.2"/><path d="M8.6 10.4V8a3.4 3.4 0 0 1 6.8 0v2.4"/></symbol>
+    <symbol id="i-time" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.2"/><path d="M12 7.4V12l3.2 2"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.2 3.4 6.4 13.2h4.6l-1 7.4 7.6-10h-4.6l.2-7.2Z"/></symbol>
+  </svg>
+
+  <!-- ===== 顶部 HUD ===== -->
+  <header class="hud" id="hud">
+    <div class="hud-row hud-row--top">
+      <div class="hud-realm" id="hud-realm">练气 1层</div>
+      <div class="hud-top-right">
+        <span class="hud-pill" id="hud-pill-boost" hidden>丹药加持</span>
+        <span class="res weather-res" id="weather-display" title="天时"><svg class="ico" id="weather-ico"><use href="#i-sun"/></svg><b id="weather-time">12:00</b></span>
+      </div>
+    </div>
+    <div class="hud-row hud-row--bar">
+      <div class="cultivation-bar-wrap">
+        <div class="cultivation-bar" id="cultivation-bar">
+          <div class="cultivation-fill" id="cultivation-fill"></div>
+        </div>
+        <span class="cultivation-text" id="cultivation-text">0 / 100</span>
+      </div>
+      <button class="btn-breakthrough" id="btn-breakthrough" data-action="breakthrough" hidden>突破</button>
+    </div>
+    <div class="hud-resources">
+      <span class="res" title="灵石"><svg class="ico ico--stone"><use href="#i-stone"/></svg><b id="res-stone">50</b></span>
+      <span class="res" title="灵草"><svg class="ico ico--herb"><use href="#i-herb"/></svg><b id="res-herb">10</b></span>
+      <span class="res" title="矿石"><svg class="ico ico--ore"><use href="#i-ore"/></svg><b id="res-ore">0</b></span>
+      <span class="res" title="凝露"><svg class="ico ico--dew"><use href="#i-dew"/></svg><b id="res-dew">0</b></span>
+      <span class="res res--pill" title="丹药 · 聚气 / 破障"><svg class="ico ico--pill"><use href="#i-pill"/></svg><b id="res-pill">0</b><span class="res-split">·</span><b class="res-second" id="res-pill-po">0</b></span>
+    </div>
+  </header>
+
+  <!-- ===== 主内容区 ===== -->
+  <main class="main-content" id="main-content">
+
+    <!-- 小院场景（2D 俯视 · 可切换山峰） -->
+    <section class="yard-scene scene-topdown" id="yard-scene" data-peak="qingyun">
+
+      <!-- 山峰选择 -->
+      <div class="peak-bar" id="peak-bar" role="tablist" aria-label="选择山峰">
+        <button class="peak-btn active" data-peak="qingyun" role="tab" aria-selected="true">青云峰</button>
+        <button class="peak-btn" data-peak="luoxia" role="tab" aria-selected="false">落霞峰</button>
+        <button class="peak-btn" data-peak="hantan" role="tab" aria-selected="false">寒潭峰</button>
+      </div>
+
+      <!-- 俯视场景图 -->
+      <svg class="peak-map" viewBox="0 0 360 320" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+        <defs>
+          <linearGradient id="gGround" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--terrain-1)"/>
+            <stop offset="60%" stop-color="var(--terrain-2)"/>
+            <stop offset="100%" stop-color="var(--terrain-3)"/>
+          </linearGradient>
+          <pattern id="pTile" width="18" height="18" patternUnits="userSpaceOnUse">
+            <path d="M0 18 L9 9 L18 18" fill="none" stroke="var(--tile-line)" stroke-width="1"/>
+          </pattern>
+          <pattern id="pSoil" width="8" height="8" patternUnits="userSpaceOnUse">
+            <path d="M0 4h8" stroke="var(--soil-line)" stroke-width="1.4" opacity=".7"/>
+          </pattern>
+          <radialGradient id="gWater" cx="50%" cy="40%" r="60%">
+            <stop offset="0%" stop-color="var(--water-1)"/>
+            <stop offset="100%" stop-color="var(--water-2)"/>
+          </radialGradient>
+        </defs>
+
+        <!-- 地表 -->
+        <rect width="360" height="320" fill="url(#gGround)"/>
+        <rect width="360" height="320" fill="url(#pSoil)" opacity=".25"/>
+
+        <!-- 竹篱围墙（四边） -->
+        <g class="fence">
+          <g stroke="var(--fence)" fill="none" stroke-width="2.2" stroke-linecap="round" opacity=".62">
+            <path d="M8 314 L8 24 M352 314 L352 24 M8 24 L352 24"/>
+          </g>
+          <g fill="var(--fence)" opacity=".72">
+            <circle cx="8" cy="24" r="2.4"/><circle cx="352" cy="24" r="2.4"/>
+            <circle cx="8" cy="104" r="2.2"/><circle cx="352" cy="104" r="2.2"/>
+            <circle cx="8" cy="184" r="2.2"/><circle cx="352" cy="184" r="2.2"/>
+            <circle cx="8" cy="264" r="2.2"/><circle cx="352" cy="264" r="2.2"/>
+            <circle cx="86" cy="24" r="2"/><circle cx="164" cy="24" r="2"/>
+            <circle cx="242" cy="24" r="2"/><circle cx="320" cy="24" r="2"/>
+          </g>
+        </g>
+
+        <!-- 石径：从门前通到下方 -->
+        <path class="path" d="M180 200 C176 214 168 226 160 240 C154 258 152 274 150 292"
+              fill="none" stroke="var(--path-edge)" stroke-width="17" stroke-linecap="round" opacity=".55"/>
+        <path d="M180 200 C176 214 168 226 160 240 C154 258 152 274 150 292"
+              fill="none" stroke="var(--path-fill)" stroke-width="13" stroke-linecap="round" opacity=".85" stroke-dasharray="7 6"/>
+
+        <!-- 灵池 -->
+        <g class="pond">
+          <ellipse cx="62" cy="250" rx="45" ry="29" fill="var(--rock)" opacity=".55"/>
+          <ellipse cx="62" cy="250" rx="41" ry="26" fill="url(#gWater)"/>
+          <ellipse cx="62" cy="250" rx="41" ry="26" fill="none" stroke="var(--water-edge)" stroke-width="1.4" opacity=".55"/>
+          <path d="M36 244 q7 -4 14 0 M56 254 q7 -4 14 0 M42 259 q6 -3 12 0 M66 246 q6 -3 12 0"
+                fill="none" stroke="var(--water-edge)" stroke-width="1.2" opacity=".5"/>
+          <!-- 芦苇 -->
+          <g stroke="var(--tree-edge)" stroke-width="1.5" stroke-linecap="round" fill="none" opacity=".75">
+            <path d="M24 234 q-2 -10 1 -16"/><path d="M29 236 q1 -9 -1 -15"/>
+            <path d="M96 262 q2 -9 -1 -15"/><path d="M101 260 q-1 -8 2 -14"/>
+          </g>
+        </g>
+
+        <!-- 灵田土畦 -->
+        <g class="soil-patch">
+          <rect x="196" y="216" width="118" height="74" rx="8"
+                fill="var(--soil)" stroke="var(--soil-edge)" stroke-width="1.6"/>
+          <path d="M204 232h102 M204 248h102 M204 264h102" stroke="var(--soil-line)" stroke-width="2" opacity=".55"/>
+        </g>
+
+        <!-- 洞府：抬梁式 · 须弥座 · 斗拱 · 瓦垄 -->
+        <g class="house">
+          <!-- 落影 -->
+          <ellipse cx="180" cy="208" rx="100" ry="12" fill="rgba(28,24,16,.16)"/>
+          <ellipse cx="180" cy="206" rx="76" ry="8" fill="rgba(28,24,16,.10)"/>
+
+          <!-- ===== 台基：须弥座（上枋 / 束腰 / 下枋） ===== -->
+          <path d="M100 152 h160 v5 h-160 Z" fill="var(--stone-1)"/>
+          <path d="M100 157 h160 v1.6 h-160 Z" fill="rgba(0,0,0,.16)"/>
+          <path d="M106 158.6 h148 v10.8 h-148 Z" fill="var(--stone-2)"/>
+          <!-- 束腰壸门 -->
+          <g fill="rgba(0,0,0,.14)">
+            <rect x="116" y="161" width="10" height="6" rx="1.5"/>
+            <rect x="140" y="161" width="10" height="6" rx="1.5"/>
+            <rect x="164" y="161" width="10" height="6" rx="1.5"/>
+            <rect x="186" y="161" width="10" height="6" rx="1.5"/>
+            <rect x="210" y="161" width="10" height="6" rx="1.5"/>
+            <rect x="234" y="161" width="10" height="6" rx="1.5"/>
+          </g>
+          <path d="M96 169.4 h168 v12 h-168 Z" fill="var(--stone-1)"/>
+          <path d="M96 181.4 h168 v3 h-168 Z" fill="rgba(0,0,0,.22)"/>
+          <!-- 台基石面高光 -->
+          <path d="M96 169.4 h168 v1.4 h-168 Z" fill="rgba(255,255,255,.35)"/>
+
+          <!-- ===== 石阶（三级 + 垂带） ===== -->
+          <g>
+            <!-- 三级踏跺（踏面亮、踢面暗） -->
+            <rect x="164" y="184" width="32" height="4.6" fill="var(--stone-1)"/>
+            <rect x="164" y="188.6" width="32" height="2.2" fill="rgba(0,0,0,.16)"/>
+            <rect x="158" y="190.8" width="44" height="4.6" fill="var(--stone-1)"/>
+            <rect x="158" y="195.4" width="44" height="2.2" fill="rgba(0,0,0,.16)"/>
+            <rect x="151" y="197.6" width="58" height="4.6" fill="var(--stone-1)"/>
+            <rect x="151" y="202.2" width="58" height="2.4" fill="rgba(0,0,0,.20)"/>
+            <!-- 垂带（两侧斜边） -->
+            <path d="M164 184 L151 197.6 L151 204.6 L164 190.8 Z" fill="var(--stone-2)"/>
+            <path d="M196 184 L209 197.6 L209 204.6 L196 190.8 Z" fill="var(--stone-2)"/>
+            <path d="M164 184 L151 197.6" stroke="rgba(255,255,255,.4)" stroke-width="1"/>
+            <path d="M196 184 L209 197.6" stroke="rgba(255,255,255,.4)" stroke-width="1"/>
+          </g>
+
+          <!-- ===== 墙身 ===== -->
+          <rect x="112" y="98" width="136" height="54" fill="var(--plaster)"/>
+          <rect x="112" y="98" width="136" height="5" fill="rgba(0,0,0,.18)"/>
+          <rect x="112" y="146" width="136" height="6" fill="rgba(0,0,0,.10)"/>
+          <rect x="112" y="98" width="2" height="54" fill="rgba(0,0,0,.08)"/>
+          <rect x="246" y="98" width="2" height="54" fill="rgba(0,0,0,.12)"/>
+
+          <!-- ===== 直棂窗 ×2 ===== -->
+          <g>
+            <rect x="121" y="112" width="36" height="26" rx="1" fill="var(--wood-2)"/>
+            <rect x="123.5" y="114.5" width="31" height="21" fill="var(--window-bg)"/>
+            <g stroke="var(--wood-2)" stroke-width="1.5">
+              <path d="M129 114.5v21M135 114.5v21M141 114.5v21M147 114.5v21"/>
+            </g>
+            <rect x="203" y="112" width="36" height="26" rx="1" fill="var(--wood-2)"/>
+            <rect x="205.5" y="114.5" width="31" height="21" fill="var(--window-bg)"/>
+            <g stroke="var(--wood-2)" stroke-width="1.5">
+              <path d="M211 114.5v21M217 114.5v21M223 114.5v21M229 114.5v21"/>
+            </g>
+          </g>
+
+          <!-- ===== 板门（门槛 / 门扇 / 门簪 / 铺首） ===== -->
+          <g>
+            <rect x="168" y="104" width="24" height="48" fill="var(--wood-1)"/>
+            <rect x="168" y="104" width="24" height="48" fill="none" stroke="var(--wood-3)" stroke-width="1.4"/>
+            <path d="M180 104v48" stroke="var(--wood-3)" stroke-width="1.2"/>
+            <rect x="166" y="102" width="28" height="3.2" rx="1" fill="var(--wood-3)"/>
+            <rect x="164" y="148" width="32" height="4" fill="var(--stone-2)"/>
+            <!-- 门簪 -->
+            <circle cx="174" cy="107" r="1.5" fill="#C9A24A"/>
+            <circle cx="186" cy="107" r="1.5" fill="#C9A24A"/>
+            <!-- 铺首 -->
+            <circle cx="176" cy="130" r="1.8" fill="none" stroke="#C9A24A" stroke-width="1.2"/>
+            <circle cx="184" cy="130" r="1.8" fill="none" stroke="#C9A24A" stroke-width="1.2"/>
+          </g>
+
+          <!-- ===== 檐柱 ×4（带柱础） ===== -->
+          <g>
+            <rect x="163" y="98" width="6" height="52" fill="var(--wood-1)"/>
+            <rect x="191" y="98" width="6" height="52" fill="var(--wood-1)"/>
+            <rect x="109" y="98" width="6" height="52" fill="var(--wood-1)"/>
+            <rect x="245" y="98" width="6" height="52" fill="var(--wood-1)"/>
+            <!-- 柱侧高光 / 暗面 -->
+            <g fill="rgba(255,255,255,.22)">
+              <rect x="109" y="98" width="1.6" height="52"/>
+              <rect x="163" y="98" width="1.6" height="52"/>
+              <rect x="191" y="98" width="1.6" height="52"/>
+              <rect x="245" y="98" width="1.6" height="52"/>
+            </g>
+            <g fill="rgba(0,0,0,.20)">
+              <rect x="113.4" y="98" width="1.6" height="52"/>
+              <rect x="167.4" y="98" width="1.6" height="52"/>
+              <rect x="195.4" y="98" width="1.6" height="52"/>
+              <rect x="249.4" y="98" width="1.6" height="52"/>
+            </g>
+            <!-- 柱础 -->
+            <g fill="var(--stone-1)">
+              <rect x="106" y="147" width="12" height="5" rx="1.5"/>
+              <rect x="160" y="147" width="12" height="5" rx="1.5"/>
+              <rect x="188" y="147" width="12" height="5" rx="1.5"/>
+              <rect x="242" y="147" width="12" height="5" rx="1.5"/>
+            </g>
+          </g>
+
+          <!-- ===== 额枋（彩画两道） ===== -->
+          <rect x="104" y="90" width="152" height="8" fill="var(--wood-1)"/>
+          <rect x="104" y="90" width="152" height="8" fill="none" stroke="var(--wood-3)" stroke-width="1"/>
+          <path d="M104 93.2 h152" stroke="var(--azure-500)" stroke-width="1.1" opacity=".55"/>
+          <path d="M104 96 h152" stroke="var(--gold-3,#8C6A18)" stroke-width=".9" opacity=".5"/>
+
+          <!-- ===== 斗拱（七攒：斗 + 拱 + 昂） ===== -->
+          <g>
+            <g fill="var(--wood-1)" stroke="var(--wood-3)" stroke-width=".7">
+              <!-- 每攒：横向拱 + 上斗 + 下昂 -->
+              <rect x="110" y="79" width="18" height="4.4" rx="1"/>
+              <rect x="132" y="79" width="18" height="4.4" rx="1"/>
+              <rect x="154" y="79" width="18" height="4.4" rx="1"/>
+              <rect x="188" y="79" width="18" height="4.4" rx="1"/>
+              <rect x="210" y="79" width="18" height="4.4" rx="1"/>
+              <rect x="232" y="79" width="18" height="4.4" rx="1"/>
+            </g>
+            <g fill="var(--wood-2)">
+              <rect x="114.5" y="75.4" width="9" height="3.8" rx=".8"/>
+              <rect x="136.5" y="75.4" width="9" height="3.8" rx=".8"/>
+              <rect x="158.5" y="75.4" width="9" height="3.8" rx=".8"/>
+              <rect x="192.5" y="75.4" width="9" height="3.8" rx=".8"/>
+              <rect x="214.5" y="75.4" width="9" height="3.8" rx=".8"/>
+              <rect x="236.5" y="75.4" width="9" height="3.8" rx=".8"/>
+            </g>
+            <!-- 昂（斜出） -->
+            <g stroke="var(--wood-1)" stroke-width="2.2" stroke-linecap="round">
+              <path d="M119 83.4 117 88.6"/><path d="M141 83.4 139 88.6"/>
+              <path d="M163 83.4 161 88.6"/><path d="M197 83.4 195 88.6"/>
+              <path d="M219 83.4 217 88.6"/><path d="M241 83.4 239 88.6"/>
+            </g>
+            <!-- 斗拱暗影 -->
+            <rect x="104" y="86.6" width="152" height="3.4" fill="rgba(0,0,0,.22)"/>
+          </g>
+
+          <!-- ===== 檐椽（两排椽头） ===== -->
+          <g fill="var(--wood-2)" stroke="var(--wood-3)" stroke-width=".6">
+            <g>
+              <rect x="100" y="86.6" width="4" height="4" rx=".8"/><rect x="112" y="86.6" width="4" height="4" rx=".8"/>
+              <rect x="124" y="86.6" width="4" height="4" rx=".8"/><rect x="136" y="86.6" width="4" height="4" rx=".8"/>
+              <rect x="148" y="86.6" width="4" height="4" rx=".8"/><rect x="160" y="86.6" width="4" height="4" rx=".8"/>
+              <rect x="172" y="86.6" width="4" height="4" rx=".8"/><rect x="184" y="86.6" width="4" height="4" rx=".8"/>
+              <rect x="196" y="86.6" width="4" height="4" rx=".8"/><rect x="208" y="86.6" width="4" height="4" rx=".8"/>
+              <rect x="220" y="86.6" width="4" height="4" rx=".8"/><rect x="232" y="86.6" width="4" height="4" rx=".8"/>
+              <rect x="244" y="86.6" width="4" height="4" rx=".8"/><rect x="256" y="86.6" width="4" height="4" rx=".8"/>
+            </g>
+          </g>
+
+          <!-- ===== 屋面 ===== -->
+          <!-- 庑殿顶：正脊 150→210，四坡下垂 -->
+          <path d="M86 90 C92 88 100 82 112 74 L150 40 L210 40 L248 74 C260 82 268 88 274 90
+                   C276 91 276 92 274 92.6 L86 92.6 C84 92 84 91 86 90 Z"
+                fill="var(--roof)"/>
+          <!-- 脊部受光 -->
+          <path d="M112 74 L150 42 L210 42 L248 74 L240 78 L186 47 L174 47 L120 78 Z"
+                fill="rgba(255,255,255,.15)"/>
+          <!-- 檐部压暗 -->
+          <path d="M86 87 L274 87 L274 92.6 L86 92.6 Z" fill="rgba(0,0,0,.16)"/>
+
+          <!-- 瓦垄（自檐口向正脊收拢） -->
+          <g stroke="var(--roof-line)" stroke-width="1.05" fill="none" opacity=".9" stroke-linecap="round">
+            <path d="M104 88 L156 43"/><path d="M122 88 L162 43"/>
+            <path d="M140 88 L168 43"/><path d="M158 88 L174 43"/>
+            <path d="M180 88 L180 43"/>
+            <path d="M202 88 L186 43"/><path d="M220 88 L192 43"/>
+            <path d="M238 88 L198 43"/><path d="M256 88 L204 43"/>
+          </g>
+
+          <!-- 垂脊（自正脊两端落至檐角） -->
+          <path d="M150 40 L112 74 L86 90" fill="none" stroke="var(--roof-edge)" stroke-width="2.2" stroke-linecap="round"/>
+          <path d="M210 40 L248 74 L274 90" fill="none" stroke="var(--roof-edge)" stroke-width="2.2" stroke-linecap="round"/>
+
+          <!-- 正脊（平直，两端起翘） -->
+          <path d="M148 40 L212 40" stroke="var(--roof-ridge)" stroke-width="4" stroke-linecap="round"/>
+          <!-- 鸱吻：贴脊端向上内卷 -->
+          <path d="M148 40 c-2 -2 -2 -5 1 -6.6 c1.6 -.9 3 .2 2.6 1.8" fill="none" stroke="var(--roof-ridge)" stroke-width="2.4" stroke-linecap="round"/>
+          <path d="M212 40 c2 -2 2 -5 -1 -6.6 c-1.6 -.9 -3 .2 -2.6 1.8" fill="none" stroke="var(--roof-ridge)" stroke-width="2.4" stroke-linecap="round"/>
+
+          <!-- 瓦当 + 滴水（檐口一排） -->
+          <g>
+            <g fill="var(--roof-edge)" opacity=".95">
+              <circle cx="94" cy="92.4" r="2"/><circle cx="108" cy="92.4" r="2"/><circle cx="122" cy="92.4" r="2"/>
+              <circle cx="136" cy="92.4" r="2"/><circle cx="150" cy="92.4" r="2"/><circle cx="164" cy="92.4" r="2"/>
+              <circle cx="178" cy="92.4" r="2"/><circle cx="192" cy="92.4" r="2"/><circle cx="206" cy="92.4" r="2"/>
+              <circle cx="220" cy="92.4" r="2"/><circle cx="234" cy="92.4" r="2"/><circle cx="248" cy="92.4" r="2"/>
+              <circle cx="262" cy="92.4" r="2"/>
+            </g>
+            <g fill="rgba(255,255,255,.35)">
+              <circle cx="94" cy="91.6" r=".8"/><circle cx="108" cy="91.6" r=".8"/><circle cx="122" cy="91.6" r=".8"/>
+              <circle cx="136" cy="91.6" r=".8"/><circle cx="150" cy="91.6" r=".8"/><circle cx="164" cy="91.6" r=".8"/>
+              <circle cx="178" cy="91.6" r=".8"/><circle cx="192" cy="91.6" r=".8"/><circle cx="206" cy="91.6" r=".8"/>
+              <circle cx="220" cy="91.6" r=".8"/><circle cx="234" cy="91.6" r=".8"/><circle cx="248" cy="91.6" r=".8"/>
+              <circle cx="262" cy="91.6" r=".8"/>
+            </g>
+          </g>
+
+          <!-- 灯笼（檐下悬于柱头） -->
+          <g>
+            <path d="M112 92 v5" stroke="var(--wood-3)" stroke-width="1"/>
+            <ellipse cx="112" cy="102" rx="4.6" ry="5.6" fill="var(--lantern)"/>
+            <ellipse cx="112" cy="102" rx="4.6" ry="5.6" fill="none" stroke="rgba(70,20,14,.5)" stroke-width=".8"/>
+            <ellipse cx="112" cy="108.4" rx="1.6" ry="1.9" fill="#C9A24A"/>
+            <path d="M248 92 v5" stroke="var(--wood-3)" stroke-width="1"/>
+            <ellipse cx="248" cy="102" rx="4.6" ry="5.6" fill="var(--lantern)"/>
+            <ellipse cx="248" cy="102" rx="4.6" ry="5.6" fill="none" stroke="rgba(70,20,14,.5)" stroke-width=".8"/>
+            <ellipse cx="248" cy="108.4" rx="1.6" ry="1.9" fill="#C9A24A"/>
+          </g>
+
+          <!-- 匾额 -->
+          <rect x="155" y="96" width="50" height="11" rx="1.2" fill="#3A2A18" stroke="#C9A24A" stroke-width="1"/>
+          <g fill="#E9CE86">
+            <rect x="161" y="100.4" width="7" height="2.6" rx=".6"/>
+            <rect x="170" y="100.4" width="7" height="2.6" rx=".6"/>
+            <rect x="179" y="100.4" width="7" height="2.6" rx=".6"/>
+            <rect x="188" y="100.4" width="7" height="2.6" rx=".6"/>
+          </g>
+        </g>
+
+        <!-- 松树 -->
+        <g class="trees">
+          <g transform="translate(46,72)">
+            <ellipse cx="0" cy="14" rx="16" ry="6" fill="rgba(30,26,18,.16)"/>
+            <path d="M0 12 L0 4" stroke="var(--trunk)" stroke-width="2.4" stroke-linecap="round"/>
+            <path d="M-13 6 L0 -14 L13 6 Z" fill="var(--tree)" stroke="var(--tree-edge)" stroke-width="1.2" stroke-linejoin="round"/>
+            <path d="M-9 -2 L0 -17 L9 -2 Z" fill="var(--tree-2)" stroke="var(--tree-edge)" stroke-width="1.1" stroke-linejoin="round"/>
+          </g>
+          <g transform="translate(300,84)">
+            <ellipse cx="0" cy="14" rx="15" ry="6" fill="rgba(30,26,18,.16)"/>
+            <path d="M0 12 L0 4" stroke="var(--trunk)" stroke-width="2.4" stroke-linecap="round"/>
+            <path d="M-12 6 L0 -13 L12 6 Z" fill="var(--tree)" stroke="var(--tree-edge)" stroke-width="1.2" stroke-linejoin="round"/>
+            <path d="M-8 -2 L0 -16 L8 -2 Z" fill="var(--tree-2)" stroke="var(--tree-edge)" stroke-width="1.1" stroke-linejoin="round"/>
+          </g>
+          <g transform="translate(272,286) scale(.85)">
+            <ellipse cx="0" cy="14" rx="15" ry="6" fill="rgba(30,26,18,.16)"/>
+            <path d="M0 12 L0 4" stroke="var(--trunk)" stroke-width="2.4" stroke-linecap="round"/>
+            <path d="M-12 6 L0 -13 L12 6 Z" fill="var(--tree)" stroke="var(--tree-edge)" stroke-width="1.2" stroke-linejoin="round"/>
+            <path d="M-8 -2 L0 -16 L8 -2 Z" fill="var(--tree-2)" stroke="var(--tree-edge)" stroke-width="1.1" stroke-linejoin="round"/>
+          </g>
+        </g>
+
+        <!-- 岩石 -->
+        <g class="rocks" fill="var(--rock)" stroke="var(--rock-edge)" stroke-width="1.2">
+          <path d="M28 150 l12 -9 l11 8 l-3 9 l-17 1 Z"/>
+          <path d="M326 200 l10 -7 l9 6 l-2 8 l-14 0 Z"/>
+        </g>
+      </svg>
+
+      <!-- 气候层（按山峰与时辰变化） -->
+      <div class="climate" aria-hidden="true"></div>
+
+      <!-- 交互热点（保留原有 id，交互逻辑不变） -->
+      <div class="character" id="character" title="沈砚 · 守拙" data-mood="静修">
+        <span class="char-shadow"></span>
+        <span class="char-sword"></span>
+        <span class="char-head">
+          <span class="char-pin"></span>
+        </span>
+        <span class="char-body">
+          <span class="char-collar"></span>
+          <span class="char-belt"></span>
+        </span>
+        <span class="char-label"><b class="char-name">沈砚</b><i class="char-mood">静修</i></span>
+        <span class="char-bubble" id="char-bubble" hidden></span>
+      </div>
+
+      <div class="plots" id="plots"></div>
+
+      <div class="meditation-pad act--meditate" id="meditation-pad" title="长按打坐">
+        <span class="pad-icon"><svg class="ico ico--lg"><use href="#i-meditate"/></svg></span>
+        <span class="pad-label">打坐</span>
+      </div>
+
+      <div class="sword-dummy act--sword" id="sword-dummy" title="点击练剑">
+        <span class="dummy-icon"><svg class="ico ico--lg"><use href="#i-sword"/></svg></span>
+        <span class="slash" aria-hidden="true"></span>
+        <span class="slash-rain" aria-hidden="true"></span>
+        <span class="dummy-label">练剑</span>
+      </div>
+
+      <div class="furnace act--furnace" id="furnace" title="点击炼丹">
+        <span class="furnace-body"><svg class="ico ico--lg"><use href="#i-furnace"/></svg></span>
+        <span class="furnace-label">丹炉</span>
+      </div>
+
+      <!-- 峰名与水印 -->
+      <div class="peak-tag"><b id="peak-name">青云峰</b><span id="peak-flavor">松风入定 · 灵气清正</span></div>
+    </section>
+
+    <!-- 面板区 -->
+    <section class="panels" id="panels">
+
+      <!-- 灵田 -->
+      <div class="panel" id="panel-farming" data-panel="farming">
+        <h2 class="panel-title"><svg class="ico"><use href="#i-farm"/></svg>灵田<span class="seal" aria-hidden="true">田</span></h2>
+        <div class="crop-select">
+          <button class="crop-btn" data-crop="herb_qingling"><svg class="ico"><use href="#i-crop-grass"/></svg>青灵草<small>60s · 产8</small></button>
+          <button class="crop-btn" data-crop="herb_ziju"><svg class="ico"><use href="#i-crop-chrys"/></svg>紫菊草<small>120s · 产14</small></button>
+          <button class="crop-btn" data-crop="herb_binglian"><svg class="ico"><use href="#i-crop-lotus"/></svg>冰莲草<small>240s · 产28</small></button>
+        </div>
+        <div class="plots-list" id="plots-list"></div>
+
+        <button class="btn-action btn-ghost farm-collect" data-action="harvest-all">
+          <svg class="ico"><use href="#i-claim"/></svg>一键收获
+        </button>
+
+        <!-- 山脚集市：灵石 ↔ 材料，兼开垦新田 -->
+        <div class="shop" id="shop">
+          <div class="shop-head">
+            <span class="shop-title">山脚集市</span>
+            <span class="shop-stone">灵石 <b id="shop-stone">0</b></span>
+          </div>
+          <div class="shop-grid" id="shop-grid"></div>
+        </div>
+      </div>
+
+      <!-- 炼丹 -->
+      <div class="panel" id="panel-alchemy" data-panel="alchemy">
+        <h2 class="panel-title"><svg class="ico"><use href="#i-alchemy"/></svg>炼丹<span class="seal" aria-hidden="true">丹</span></h2>
+        <div class="recipe-list" id="recipe-list"></div>
+        <div class="craft-queue" id="craft-queue"></div>
+      </div>
+
+      <!-- 修炼 -->
+      <div class="panel" id="panel-cultivation" data-panel="cultivation">
+        <h2 class="panel-title"><svg class="ico"><use href="#i-cultivate"/></svg>修炼<span class="seal" aria-hidden="true">修</span></h2>
+        <div class="cultivation-stats" id="cultivation-stats">
+          <div class="stat-row"><span class="stat-key">神识</span><b class="stat-val" id="stat-sense">10</b></div>
+          <div class="stat-row"><span class="stat-key">血量</span><b class="stat-val" id="stat-hp">100</b></div>
+          <div class="stat-row"><span class="stat-key">法力</span><b class="stat-val" id="stat-mana">50</b></div>
+        </div>
+        <div class="breakthrough-info" id="breakthrough-info">
+          <p class="bt-hint">修为满后可突破境界</p>
+          <p class="req" id="breakthrough-req"></p>
+        </div>
+        <div class="active-actions">
+          <button class="btn-action btn-meditate" id="btn-meditate"><svg class="ico"><use href="#i-meditate"/></svg>打坐<small>长按</small></button>
+          <button class="btn-action btn-sword" id="btn-sword"><svg class="ico"><use href="#i-sword"/></svg>练剑</button>
+          <div class="meditate-depth" id="meditate-depth" hidden>入定 ×2.0</div>
+          <div class="combo-display" id="combo-display" hidden>连击 ×<b id="combo-count">0</b></div>
+        </div>
+
+        <!-- 丹房：聚气丹 / 破障丹 的使用入口 -->
+        <div class="pill-room" id="pill-room">
+          <div class="pill-room-head">
+            <span class="pill-room-title"><svg class="ico"><use href="#i-pill"/></svg>丹房</span>
+            <span class="pill-stock">
+              <span class="pill-item"><i>聚气</i><b id="pill-qiju">0</b></span>
+              <span class="pill-item"><i>破障</i><b id="pill-po">0</b></span>
+            </span>
+          </div>
+          <div class="pill-actions">
+            <button class="btn-action btn-ghost pill-btn" data-action="use-pill" id="btn-use-pill">
+              <svg class="ico"><use href="#i-pill"/></svg>
+              <span class="pb-text"><b>服丹</b><small id="pill-use-hint">+15% 修为</small></span>
+            </button>
+            <button class="btn-action btn-ghost pill-btn" data-action="pill-boost" id="btn-pill-boost">
+              <svg class="ico"><use href="#i-bolt"/></svg>
+              <span class="pb-text"><b>加持</b><small>1 时辰 ×2</small></span>
+            </button>
+          </div>
+          <div class="pill-boost-bar" id="pill-boost-bar" hidden>
+            <div class="pill-boost-fill" id="pill-boost-fill"></div>
+            <span class="pill-boost-text" id="pill-boost-text">加持中 60:00</span>
+          </div>
+        </div>
+
+        <!-- 轮回：终局循环，渡劫圆满后开放 -->
+        <div class="rebirth" id="rebirth">
+          <div class="rebirth-head">
+            <span class="rebirth-title">轮回</span>
+            <span class="rebirth-dao">道行 <b id="dao-value">0</b></span>
+          </div>
+          <p class="rebirth-desc" id="rebirth-desc">渡劫 9 层、修为圆满后可入轮回。</p>
+          <button class="btn-action rebirth-btn" data-action="rebirth" id="btn-rebirth" hidden>入轮回</button>
+        </div>
+      </div>
+
+      <!-- 日常 -->
+      <div class="panel" id="panel-daily" data-panel="daily">
+        <h2 class="panel-title"><svg class="ico"><use href="#i-daily"/></svg>日常目标<span class="daily-count" id="daily-count"></span><span class="seal" aria-hidden="true">日</span></h2>
+        <div class="daily-list" id="daily-list"></div>
+      </div>
+
+      <!-- 宠物 -->
+      <div class="panel" id="panel-pets" data-panel="pets">
+        <h2 class="panel-title"><svg class="ico"><use href="#i-pet"/></svg>宠物<span class="seal" aria-hidden="true">兽</span></h2>
+        <div class="pet-list" id="pet-list"></div>
+      </div>
+
+      <!-- 功法 -->
+      <div class="panel" id="panel-techniques" data-panel="techniques">
+        <h2 class="panel-title"><svg class="ico"><use href="#i-tech"/></svg>功法<span class="seal" aria-hidden="true">法</span></h2>
+        <div class="tech-list" id="tech-list"></div>
+      </div>
+
+      <!-- 系统 -->
+      <div class="panel" id="panel-system" data-panel="system">
+        <h2 class="panel-title"><svg class="ico"><use href="#i-system"/></svg>系统<span class="seal" aria-hidden="true">系</span></h2>
+        <div class="system-actions">
+          <button class="btn-action btn-ghost" id="btn-save"><svg class="ico"><use href="#i-save"/></svg>保存进度</button>
+          <button class="btn-action btn-ghost" id="btn-load"><svg class="ico"><use href="#i-load"/></svg>读取存档</button>
+          <button class="btn-action btn-ghost" id="btn-export"><svg class="ico"><use href="#i-export"/></svg>导出存档</button>
+          <button class="btn-action btn-ghost" id="btn-import"><svg class="ico"><use href="#i-import"/></svg>导入存档</button>
+          <input type="file" id="import-file" accept=".json" hidden>
+        </div>
+        <div class="system-info">
+          <p>版本 Web v0.3 · 数值与 Unity 版一致</p>
+          <p>存档格式 JSON · 与本机存档互通</p>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <!-- ===== 底部导航 ===== -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button class="nav-btn active" data-tab="cultivation"><svg class="ico"><use href="#i-cultivate"/></svg><span class="nav-label">修炼</span></button>
+    <button class="nav-btn" data-tab="farming"><svg class="ico"><use href="#i-farm"/></svg><span class="nav-label">灵田</span></button>
+    <button class="nav-btn" data-tab="alchemy"><svg class="ico"><use href="#i-alchemy"/></svg><span class="nav-label">炼丹</span></button>
+    <button class="nav-btn" data-tab="daily"><svg class="ico"><use href="#i-daily"/></svg><span class="nav-label">日常</span><span class="nav-badge" id="daily-badge" hidden>!</span></button>
+    <button class="nav-btn" data-tab="pets"><svg class="ico"><use href="#i-pet"/></svg><span class="nav-label">宠物</span></button>
+    <button class="nav-btn" data-tab="techniques"><svg class="ico"><use href="#i-tech"/></svg><span class="nav-label">功法</span></button>
+    <button class="nav-btn" data-tab="system"><svg class="ico"><use href="#i-system"/></svg><span class="nav-label">系统</span></button>
+  </nav>
+
+  <!-- ===== 通用弹窗 ===== -->
+  <div class="modal-overlay" id="modal-overlay" hidden>
+    <div class="modal" id="modal">
+      <div class="modal-header" id="modal-title">提示</div>
+      <div class="modal-body" id="modal-body"></div>
+      <button class="btn-action modal-close" id="modal-close">确认</button>
+    </div>
+  </div>
+
+  <!-- ===== 离线收益 ===== -->
+  <div class="modal-overlay" id="offline-overlay" hidden>
+    <div class="modal modal-offline">
+      <div class="modal-header">闭关归来</div>
+      <div class="modal-body" id="offline-body">
+        <p class="offline-lead">你离开了 <b id="offline-time">0</b> 分钟</p>
+        <div class="offline-gains" id="offline-gains"></div>
+      </div>
+      <button class="btn-action modal-close" id="offline-close">收入囊中</button>
+    </div>
+  </div>
+
+  <!-- ===== 访客 ===== -->
+  <div class="modal-overlay" id="visitor-overlay" hidden>
+    <div class="modal modal-visitor">
+      <div class="modal-header" id="visitor-title">访客到访</div>
+      <div class="modal-body">
+        <div class="visitor-info">
+          <span class="visitor-icon" id="visitor-icon">🧙</span>
+          <div class="visitor-meta">
+            <div class="visitor-name" id="visitor-name">云游道人</div>
+            <div class="visitor-greeting" id="visitor-greeting"></div>
+          </div>
+        </div>
+        <div class="visitor-options" id="visitor-options"></div>
+        <div class="visitor-response" id="visitor-response" hidden></div>
+      </div>
+      <button class="btn-action btn-ghost modal-close" id="visitor-dismiss">送客</button>
+    </div>
+  </div>
+
+  <!-- 通知 -->
+  <div class="toast" id="toast" hidden></div>
+
+  <!-- 突破特效 -->
+  <div class="breakthrough-fx" id="breakthrough-fx" hidden>
+    <div class="fx-ring"></div>
+    <div class="fx-light"></div>
+    <div class="fx-text">境界突破</div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/save.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/features.js"></script>
+  <script src="js/systems.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

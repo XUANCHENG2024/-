@@ -1,0 +1,17 @@
+{
+  "name": "desktop-xianxia-web",
+  "version": "0.3.0",
+  "description": "桌面修仙 · 2D 俯视中式修仙放置游戏的网页版（纯前端零依赖）",
+  "private": true,
+  "scripts": {
+    "test": "node test.js",
+    "e2e": "node e2e-test.js",
+    "validate": "node validate.js",
+    "balance": "node balance-sim.js",
+    "serve": "python -m http.server 8000"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.3"
+  },
+  "license": "MIT"
+}
