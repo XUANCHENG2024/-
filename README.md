@@ -140,3 +140,17 @@ print('url(\"data:image/webp;base64,'+base64.b64encode(raw).decode()+'\")')
 ## 许可
 
 个人项目，代码可自由参考。字体与贴图素材请自行确认授权后再商用。
+
+## 长稳测试
+
+`soak.js` 用 CDP 驱动真实浏览器挂机，每 10 秒采样堆内存 / DOM 节点 / tick 数 / 运行时错误。
+
+```bash
+node soak.js --minutes 4              # 无头 + 测试端驱动 tick（查泄漏）
+node soak.js --minutes 4 --headful    # 开真窗口，测真实帧率与内存曲线
+```
+
+**一个必须知道的实测结论**：无头 Edge 在本机不为页面产生合成帧
+（headless=new / headless=old / screencast / 虚拟时间推进，3 秒都只有 1 帧），
+`requestAnimationFrame` 几乎不跑。所以无头模式改用 `setInterval` 由测试端驱动 tick，
+**只能用来查内存与节点泄漏，不代表真实帧率**；要真实帧率请加 `--headful`。
