@@ -1016,3 +1016,61 @@ log('\n=== O · 运行韧性 ===');
   log(`  持续沉没口：宗门供奉 ${sectDailySink}/日 ≈ ${(sectDailySink / stonePerHour).toFixed(1)} 小时灵田产出`);
   log(`  稳态收入 ${Math.round(stonePerHour)}/h → 买完全部一次性内容需 ${(totalOnce / stonePerHour).toFixed(1)} 小时`);
 }
+
+// ============================================================
+// P. 存档字段治理（覆盖率 / 脏值 fuzz / 版本演进）
+// ============================================================
+log('\n=== P · 存档字段治理 ===');
+{
+  const base = SaveSystem.createDefault();
+  const topKeys = Object.keys(base);
+  const numericKeys = Object.keys(SaveSystem.FIELDS);
+  const structural = new Set(['version', 'timestamp', 'pillBoost', 'plots', 'craftingQueue', 'sect', 'delve', 'disciples']);
+
+  // P1 覆盖率：顶层字段必须被登记（数值表 or 结构白名单）
+  const uncovered = topKeys.filter(k => !numericKeys.includes(k) && !structural.has(k));
+  R.saveFieldsCovered = uncovered.length === 0;
+  log(`  字段登记覆盖率：${topKeys.length - uncovered.length}/${topKeys.length}${uncovered.length ? ' · 未登记 → ' + uncovered.join('、') : ''}`);
+
+  // P2 脏值 fuzz：每个数值字段注入 9 种脏值，清洗后必须仍是有限数
+  const dirty = [null, undefined, 'abc', NaN, Infinity, -Infinity, -1, 1e20, {}];
+  const failures = [];
+  for (const key of numericKeys) {
+    for (const v of dirty) {
+      let fixed;
+      try {
+        const st = SaveSystem.createDefault();
+        st[key] = v;
+        fixed = SaveSystem._ensureShape(st);
+      } catch (e) {
+        failures.push(`${key}=${String(v)} 抛异常`);
+        continue;
+      }
+      if (!Number.isFinite(fixed[key])) failures.push(`${key}=${String(v)} → ${String(fixed[key])}`);
+    }
+  }
+  R.saveFuzzFailures = failures.length;
+  log(`  脏值 fuzz：${numericKeys.length} 字段 × ${dirty.length} 种输入 = ${numericKeys.length * dirty.length} 例，失败 ${failures.length} 例`);
+  failures.slice(0, 4).forEach(f => log(`    × ${f}`));
+
+  // P3 整体状态无 NaN：清洗后整份存档序列化不应出现 NaN
+  const probe = SaveSystem.createDefault();
+  for (const key of numericKeys) probe[key] = 'x';
+  const fixedAll = SaveSystem._ensureShape(probe);
+  const hasNaN = Object.keys(SaveSystem.FIELDS).some(k => !Number.isFinite(fixedAll[k]));
+  R.saveNoNaN = !hasNaN;
+  log(`  全字段注入脏值后：${hasNaN ? '仍有非有限数' : '全部回落为有限数'}`);
+
+  // P4 版本演进：版本号不一致时应走迁移而不是丢弃
+  const oldSave = SaveSystem.createDefault();
+  oldSave.version = 0;
+  const migrated = SaveSystem.migrate(oldSave);
+  R.saveMigratesForward = !!migrated && migrated.version === SaveSystem.VERSION;
+  log(`  旧版本存档迁移：${R.saveMigratesForward ? '可迁移并升版' : '失败'}`);
+
+  // P5 未来版本存档：不强行降级，避免把新档读成旧结构
+  const futureSave = SaveSystem.createDefault();
+  futureSave.version = SaveSystem.VERSION + 5;
+  R.saveRejectsFuture = SaveSystem.migrate(futureSave) === null;
+  log(`  未来版本存档：${R.saveRejectsFuture ? '拒绝降级（安全）' : '被强行读入（有风险）'}`);
+}

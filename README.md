@@ -86,6 +86,19 @@ npm run bench      # UI 刷新基准
 三个全屏遮罩永久可见并吞掉了所有点击——所以 `style.css` 里有一条
 `[hidden] { display: none !important }`，`e2e-test.js` 第一个用例就在守它。
 
+## 真实浏览器冒烟
+
+`smoke.html` 是给真浏览器用的：jsdom 会容忍很多真实浏览器不容忍的 API 与事件时序，
+单测跑绿不代表真机不报错。它会在 iframe 里把 8 个页签、秘境流程、7 个宗门交互全跑一遍，
+并捕获 `window.onerror` / `console.error`、输出堆内存与节点数。
+
+```bash
+msedge --headless=new --allow-file-access-from-files --enable-precise-memory-info \
+       --virtual-time-budget=6000 --dump-dom smoke.html
+```
+
+> 这是"冒烟"不是"长稳"：虚拟时间会压缩定时器，真正的数小时内存曲线仍需人工挂机观察。
+
 ---
 
 ## 几个实现上的取舍

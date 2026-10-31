@@ -1724,6 +1724,71 @@ test('弟子离线不会因忠诚流失而叛出', () => {
 });
 
 // ===========================
+// 19. 存档字段治理（脏值 / 覆盖 / 演进）
+// ===========================
+console.log('\n=== 19. 存档字段治理 ===');
+
+test('脏 lastSaveTicks 不再产生 NaN 离线收益', () => {
+  const st = SaveSystem.createDefault();
+  st.lastSaveTicks = 'abc';
+  const fixed = SaveSystem._ensureShape(st);
+  assert(Number.isFinite(fixed.lastSaveTicks), `应回落为有限数，实际 ${fixed.lastSaveTicks}`);
+  const off = SaveSystem.calculateOfflineGains(fixed, Date.now());
+  assert(!off || Number.isFinite(off.cultivation), '离线收益不应是 NaN');
+});
+
+test('脏属性字段回落，战力不为 NaN', () => {
+  const st = SaveSystem.createDefault();
+  st.mana = 'abc';
+  st.health = null;
+  st.spiritSense = NaN;
+  const fixed = SaveSystem._ensureShape(st);
+  assert([fixed.mana, fixed.health, fixed.spiritSense].every(Number.isFinite),
+    `属性应全部有限，实际 ${[fixed.mana, fixed.health, fixed.spiritSense]}`);
+  GameEngine.state = fixed;
+  assert(Number.isFinite(DelveSystem.power), `战力不应为 NaN，实际 ${DelveSystem.power}`);
+});
+
+test('每个登记字段注入脏值后仍是有限数', () => {
+  const dirty = [null, undefined, 'abc', NaN, Infinity, -1, 1e20];
+  const bad = [];
+  for (const key of Object.keys(SaveSystem.FIELDS)) {
+    for (const v of dirty) {
+      const st = SaveSystem.createDefault();
+      st[key] = v;
+      const fixed = SaveSystem._ensureShape(st);
+      if (!Number.isFinite(fixed[key])) bad.push(`${key}=${String(v)}`);
+    }
+  }
+  assertEq(bad.length, 0, `异常项：${bad.slice(0, 3).join(',')}`);
+});
+
+test('所有顶层字段都被登记或列入结构白名单', () => {
+  const topKeys = Object.keys(SaveSystem.createDefault());
+  const numeric = Object.keys(SaveSystem.FIELDS);
+  const structural = ['version', 'timestamp', 'pillBoost', 'plots', 'craftingQueue', 'sect', 'delve', 'disciples'];
+  const missing = topKeys.filter(k => !numeric.includes(k) && !structural.includes(k));
+  assertEq(missing.length, 0, `未登记字段：${missing.join(',')}（新增字段请加入 SaveSystem.FIELDS）`);
+});
+
+test('字段范围钳制生效', () => {
+  const st = SaveSystem.createDefault();
+  st.realm = 999;
+  st.level = -5;
+  st.herb = 1e9;
+  const fixed = SaveSystem._ensureShape(st);
+  assertEq(fixed.realm, 6, '境界应钳到 6');
+  assertEq(fixed.level, 1, '小阶应钳到下界 1');
+  assertEq(fixed.herb, GameConfig.resourceHardCap, '灵草应钳到资源上限');
+});
+
+test('未来版本存档不被强行降级', () => {
+  const st = SaveSystem.createDefault();
+  st.version = SaveSystem.VERSION + 3;
+  assertEq(SaveSystem.migrate(st), null, '应拒绝，避免把新结构读成旧结构');
+});
+
+// ===========================
 // 测试报告
 // ===========================
 console.log('\n' + '='.repeat(50));

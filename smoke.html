@@ -1,0 +1,113 @@
+<!--
+  桌面修仙 · 真实浏览器冒烟
+
+  为什么需要它：jsdom 会容忍很多真实浏览器不容忍的东西
+  （AudioContext、CSS 合成、事件时序、非法 DOM 操作），
+  单元测试跑绿不代表真机上不报错。
+
+  覆盖：8 个页签切换、秘境进入/选门/撤离、7 个宗门交互按钮、
+        捕获 window.onerror 与 console.error、堆内存与节点数。
+
+  用法（Windows）：
+    msedge --headless=new --allow-file-access-from-files --enable-precise-memory-info \
+           --virtual-time-budget=6000 --dump-dom smoke.html
+
+  注意：这是"冒烟"，不是"长稳"。虚拟时间会压缩定时器，
+  真正的数小时内存曲线仍需人工挂机观察。
+-->
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+html,body{margin:0;background:#d8d2c2;font:12px/1.5 monospace}
+#f{width:390px;height:1200px;border:0;display:block;margin:0 auto;background:#F7F3E8}
+#out{position:fixed;left:0;top:0;right:0;max-height:40vh;overflow:auto;background:#111;color:#9f9;padding:8px;white-space:pre-wrap;z-index:9}
+</style></head>
+<body>
+<pre id="out">running...</pre>
+<iframe id="f" src="index.html"></iframe>
+<script>
+const out = [];
+const log = (s) => { out.push(s); document.getElementById('out').textContent = out.join('\n'); };
+
+const f = document.getElementById('f');
+f.addEventListener('load', () => {
+  const w = f.contentWindow;
+  const d = w.document;
+  const errors = [];
+
+  // 捕获真实浏览器里的运行时错误（jsdom 里往往被吞掉）
+  w.addEventListener('error', (e) => errors.push('error: ' + (e.message || e.error)));
+  w.addEventListener('unhandledrejection', (e) => errors.push('reject: ' + e.reason));
+  const origErr = w.console.error;
+  w.console.error = (...args) => { errors.push('console.error: ' + args.join(' ')); origErr.apply(w.console, args); };
+
+  const G = (n) => w.eval(n);
+  let UI, GE, SS, DS, Delve;
+  try {
+    UI = G('UI'); GE = G('GameEngine'); SS = G('SectSystem'); DS = G('DiscipleSystem'); Delve = G('DelveSystem');
+  } catch (e) {
+    log('模块加载失败: ' + e.message);
+    return;
+  }
+
+  // 造一个中等进度的存档
+  const st = G('SaveSystem').createDefault();
+  st.realm = 4; st.level = 3; st.stone = 8000; st.herb = 120;
+  st.spiritSense = 34; st.mana = 260; st.health = 300; st.cultivation = 300;
+  GE.state = st;
+  SS.ensure(); DS.ensure(); SS.join();
+  SS.data.contrib = 2000; SS.data.prestige = 999; SS._refreshRank();
+  SS.data.tokens = 5;
+  DS.recruit();
+
+  const tabs = ['cultivation', 'farming', 'alchemy', 'daily', 'pets', 'techniques', 'sect', 'system'];
+  let clicked = 0;
+  for (const t of tabs) {
+    try {
+      UI.showTab(t);
+      UI._sectCache = {}; UI._hudCache = {}; UI._cvCache = {};
+      UI.refreshAll(true);
+      clicked++;
+    } catch (e) {
+      errors.push(`切换 ${t} 失败: ${e.message}`);
+    }
+  }
+  log(`标签页切换：${clicked}/${tabs.length} 成功`);
+
+  // 秘境：进入 → 选门 → 撤离
+  try {
+    Delve.enter(1);
+    const before = Delve.data.floor;
+    Delve.choose(0);
+    log(`秘境：进入第 ${before} 层，选门后 → ${Delve.active ? '第 ' + Delve.data.floor + ' 层' : '已结算'}`);
+    if (Delve.active) Delve.withdraw();
+  } catch (e) {
+    errors.push('秘境流程失败: ' + e.message);
+  }
+
+  // 宗门交互全跑一遍
+  const acts = ['sect-task', 'sect-claim', 'sect-offer', 'sect-buytoken', 'sect-train', 'disciple-advise', 'disciple-impart'];
+  let actOk = 0;
+  for (const a of acts) {
+    UI.showTab('sect'); UI._sectCache = {}; UI.refreshAll(true);
+    const btn = d.querySelector('[data-action="' + a + '"]');
+    if (!btn) { errors.push('找不到按钮 ' + a); continue; }
+    try { btn.click(); actOk++; } catch (e) { errors.push(a + ' 点击失败: ' + e.message); }
+  }
+  log(`宗门交互：${actOk}/${acts.length} 可点击`);
+
+  // 让主循环跑一会儿，看有没有异常冒出来
+  setTimeout(() => {
+    const banner = d.getElementById('fatal-banner');
+    log(`主循环异常横幅：${banner ? '出现（说明有异常）' : '未出现'}`);
+    log(`运行时错误：${errors.length}`);
+    errors.slice(0, 8).forEach(e => log('  × ' + e));
+    if (w.performance && w.performance.memory) {
+      const m = w.performance.memory;
+      log(`JS 堆：${(m.usedJSHeapSize / 1048576).toFixed(1)} MB / 上限 ${(m.jsHeapSizeLimit / 1048576).toFixed(0)} MB`);
+    }
+    log(`DOM 节点数：${d.querySelectorAll('*').length}`);
+    log('DONE');
+  }, 1500);
+});
+</script>
+</body></html>

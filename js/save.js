@@ -16,6 +16,49 @@ const SaveSystem = {
   _tabId: Math.random().toString(36).slice(2) + Date.now().toString(36),
   _autoSaveDisabled: false,
 
+  /**
+   * 数值字段注册表。
+   *
+   * 为什么要有这张表：数值字段一旦读到脏值（字符串、null、NaN），
+   * 就会沿着计算链一路污染。例如 lastSaveTicks 为 "abc" 时，
+   * 离线结算会算出 NaN 修为，玩家的修为条永久卡死在 NaN，再也无法突破。
+   * 逐个 if 打补丁既漏又难维护，所以统一登记、统一清洗。
+   *
+   * 新增数值字段时必须在这里登记，audit 的 P 组会检查覆盖率。
+   * [最小值, 最大值, 默认值, 'int'|'num']
+   */
+  FIELDS: {
+    lastSaveTicks:       [0, 4e12, 0, 'int'],
+    dao:                 [0, 1e9, 0, 'int'],
+    rebirths:            [0, 1e6, 0, 'int'],
+    realm:               [1, 6, 1, 'int'],
+    level:               [1, 9, 1, 'int'],
+    cultivation:         [0, 1e12, 0, 'num'],
+    bufferedCultivation: [0, 1e12, 0, 'num'],
+    totalCultivation:    [0, 1e15, 0, 'num'],
+    spiritSense:         [1, 1e9, 10, 'int'],
+    health:              [1, 1e9, 100, 'int'],
+    mana:                [0, 1e9, 50, 'int'],
+    pillBoostRemaining:  [0, 1e6, 0, 'num'],
+    stone:               [0, 999999, 50, 'int'],
+    herb:                [0, 999, 10, 'int'],
+    ore:                 [0, 999, 0, 'int'],
+    dew:                 [0, 999, 0, 'int'],
+    cultivationPill:     [0, 999, 0, 'int'],
+    breakthroughPill:    [0, 999, 1, 'int'],
+    unlockedPlots:       [3, 8, 3, 'int'],
+    injuryUntil:         [0, 4e12, 0, 'num'],
+  },
+
+  /** 把任意输入压成一个有限的、在范围内的数字 */
+  _sanitizeNum(value, spec) {
+    const [min, max, def, kind] = spec;
+    const n = Number(value);
+    if (!Number.isFinite(n)) return def;      // NaN / Infinity / null / 'abc' 全部回落到默认值
+    const clamped = Math.min(max, Math.max(min, n));
+    return kind === 'int' ? Math.floor(clamped) : clamped;
+  },
+
   /** 创建默认存档 */
   createDefault() {
     return {
@@ -167,22 +210,13 @@ const SaveSystem = {
     const out = { ...base, ...data };
     out.version = this.VERSION;   // 迁移完成后统一标记为当前版本
 
-    out.realm = Math.min(Math.max(1, Number(out.realm) || 1), 6);
-    out.level = Math.min(Math.max(1, Number(out.level) || 1), 9);
-    out.cultivation = Math.max(0, Number(out.cultivation) || 0);
-    out.bufferedCultivation = Math.max(0, Number(out.bufferedCultivation) || 0);
-    out.dao = Math.max(0, Number(out.dao) || 0);
-    out.rebirths = Math.max(0, Number(out.rebirths) || 0);
-    out.totalCultivation = Math.max(0, Number(out.totalCultivation) || 0);
-
-    for (const k of ['stone', 'herb', 'ore', 'dew', 'cultivationPill', 'breakthroughPill']) {
-      out[k] = Math.max(0, Math.floor(Number(out[k]) || 0));
+    // 第一遍：所有登记在册的数值字段统一清洗（缺失/NaN/字符串/越界一次解决）
+    for (const key of Object.keys(this.FIELDS)) {
+      out[key] = this._sanitizeNum(out[key], this.FIELDS[key]);
     }
 
-    out.unlockedPlots = Math.min(
-      Math.max(GameConfig.startingPlots, Number(out.unlockedPlots) || GameConfig.startingPlots),
-      GameConfig.maxPlots
-    );
+    // 第二遍：结构型字段（数组/对象）单独处理
+    out.pillBoost = !!out.pillBoost;
 
     // 地块数组必须够长且结构完整，否则 tick 里读 plot.state 会抛错
     if (!Array.isArray(out.plots) || out.plots.length < GameConfig.maxPlots) {
