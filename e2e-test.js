@@ -550,6 +550,21 @@ check('确认后境界归零', GameEngine.state.realm === 1, `realm=${GameEngine
 check('确认后获得道行', GameEngine.state.dao > 0, `dao=${GameEngine.state.dao}`);
 SectSystem.data.tokens = savedTokens;
 
+// ===== 13. 运行异常横幅 =====
+console.log('\n=== 13. 运行异常提示 ===');
+
+check('UI 提供 showFatalBanner', typeof UI.showFatalBanner === 'function');
+if (typeof UI.showFatalBanner === 'function') {
+  UI.showFatalBanner('测试用异常提示');
+  const b1 = document.getElementById('fatal-banner');
+  check('横幅已插入页面', !!b1);
+  check('横幅带关闭按钮', !!b1 && !!b1.querySelector('.fatal-banner-close'));
+  UI.showFatalBanner('第二次调用');
+  check('重复调用不重复插入', document.querySelectorAll('#fatal-banner').length === 1);
+  b1.querySelector('.fatal-banner-close').click();
+  check('点关闭后横幅移除', !document.getElementById('fatal-banner'));
+}
+
 // ===== 汇总 =====
 console.log('\n' + '='.repeat(55));
 console.log(`E2E 报告：${pass}/${pass + fail} 通过，${fail} 失败`);

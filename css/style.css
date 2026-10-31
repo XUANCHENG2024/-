@@ -4469,8 +4469,9 @@ body {
   margin-top: var(--s3);
 }
 .disciple-btn {
-  min-height: 34px;
-  padding: 4px 2px;
+  /* 触控目标下限 44px：弟子操作是移动端高频入口，34px 实测偏小 */
+  min-height: 44px;
+  padding: 6px 2px;
   border-radius: var(--r1);
   font-size: 11px;
   letter-spacing: .02em;
@@ -4492,3 +4493,36 @@ body {
   .npc-row { grid-template-columns: auto 1fr; grid-template-areas: "title name" "badge badge" "line line"; }
   .npc-badge { text-align: left; }
 }
+
+/* ============================================================
+   运行异常横幅（主循环连续出错时出现）
+   ============================================================ */
+.fatal-banner {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom, 0px) + 78px);
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  max-width: min(92vw, 460px);
+  padding: 10px 12px;
+  border-radius: var(--r2);
+  background: linear-gradient(180deg, rgba(142, 59, 52, .96), rgba(110, 44, 38, .96));
+  color: #F7EFE4;
+  font-size: var(--t-xs);
+  line-height: 1.55;
+  box-shadow: 0 6px 22px rgba(90, 34, 30, .38), inset 0 1px 0 rgba(255, 255, 255, .16);
+}
+.fatal-banner span { flex: 1; }
+.fatal-banner-close {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-radius: var(--r1);
+  font-size: 11px;
+  color: #F7EFE4;
+  background: rgba(255, 255, 255, .16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .22);
+}
+.fatal-banner-close:active { transform: scale(.97); }

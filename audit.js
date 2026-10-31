@@ -938,3 +938,81 @@ log('\n=== N · 跨系统一致性 ===');
   R.rankDriftsWithPrestige = SectSystem.data.rank < highRank;
   log(`  声望归零后职位：${highRank} → ${SectSystem.data.rank}${R.rankDriftsWithPrestige ? '（会掉级）' : '（不掉级）'}`);
 }
+
+// ============================================================
+// O. 运行韧性（异常边界 / 存档体积 / 时钟异常 / 长会话）
+// ============================================================
+log('\n=== O · 运行韧性 ===');
+{
+  const appSrc = CODE['app.js'];
+
+  // O1 主循环异常边界：rAF 必须无条件续帧
+  const hasTry = /function gameLoop\(timestamp\)\s*\{[\s\S]*?try\s*\{/.test(appSrc);
+  const rafInFinally = /finally\s*\{[\s\S]{0,120}requestAnimationFrame\(gameLoop\)/.test(appSrc);
+  R.loopGuarded = hasTry && rafInFinally;
+  log(`  主循环异常边界：${hasTry ? '有 try' : '无 try'} · rAF 在 finally：${rafInFinally ? '是' : '否'} → ${R.loopGuarded ? '安全' : '一次异常即永久定格'}`);
+
+  // O2 双启动保护
+  R.bootGuard = /__dxBooted/.test(appSrc);
+  log(`  双启动保护：${R.bootGuard ? '有' : '无（重复引入脚本会跑两个主循环，双倍速）'}`);
+
+  // O3 存档体积与配额占用
+  const big = SaveSystem.createDefault();
+  big.realm = 6; big.level = 9;
+  big.unlockedPlots = 8;
+  big.plots = Array.from({ length: 8 }, () => ({
+    state: 'growing', cropId: 'herb_binglian', growthProgress: 123.4, growthTime: 240, watered: true,
+  }));
+  big.craftingQueue = Array.from({ length: 3 }, () => ({ recipeId: 'pill_xuanyuan', timeRemaining: 300, totalTime: 600 }));
+  big.sect.joined = true; big.sect.rank = 6; big.sect.prestige = 9999; big.sect.contrib = 12345;
+  big.disciples = Array.from({ length: 5 }, (_, i) => ({
+    id: `dis_${i}`, name: `林稚川${i}`, aptitude: 5, cultivation: 99.5, loyalty: 88, stage: 1,
+    trainedDate: 'Sat Oct 31 2026', joinedAt: Date.now(),
+  }));
+  const json = JSON.stringify(big);
+  R.saveBytes = json.length;
+  R.saveQuotaPct = +(json.length / (5 * 1024 * 1024) * 100).toFixed(2);
+  log(`  满配存档体积：${(json.length / 1024).toFixed(1)} KB（占 5MB 配额的 ${R.saveQuotaPct}%）`);
+
+  // O4 时钟异常：lastSave 落在未来 / 大幅回拨
+  const future = SaveSystem.createDefault();
+  future.lastSaveTicks = Date.now() + 3600 * 1000;   // 存档时间在未来（用户改过系统时间）
+  let futureOk = true, futureGain = null;
+  try { futureGain = SaveSystem.calculateOfflineGains(future, Date.now()); } catch (e) { futureOk = false; }
+  R.clockFutureSafe = futureOk && futureGain === null;
+  log(`  存档时间在未来：${futureOk ? (futureGain === null ? '不结算（安全）' : `结算了 ${Math.round(futureGain.elapsedSeconds)}s（可疑）`) : '抛异常'}`);
+
+  const far = SaveSystem.createDefault();
+  far.lastSaveTicks = Date.now() - 400 * 24 * 3600 * 1000;   // 放置 400 天
+  const farGain = SaveSystem.calculateOfflineGains(far, Date.now());
+  R.clockFarCapped = farGain && farGain.elapsedSeconds <= GameConfig.offlineCapSeconds + 7200;
+  log(`  放置 400 天：结算 ${Math.round(farGain.elapsedSeconds / 3600)} 小时 → ${R.clockFarCapped ? '已按上限钳制' : '未钳制（可被改时钟刷收益）'}`);
+
+  // O5 经济：新系统加入后灵石是否仍有沉淀
+  const plotSink = GameConfig.plotCosts.reduce((a, b) => a + b, 0);
+  let techSink = 0;
+  for (const m of CODE['systems.js'].matchAll(/cost:\s*(\d+)/g)) techSink += Number(m[1]);
+  let petSink = 0;
+  const petRe = /upgradeCost:\s*(\d+),[\s\S]{0,40}?maxLevel:\s*(\d+)/g;
+  let pm;
+  while ((pm = petRe.exec(CODE['systems.js'])) !== null) {
+    for (let lv = 1; lv < Number(pm[2]); lv++) petSink += Number(pm[1]) * lv;
+  }
+  const scriptureSink = GameConfig.sect.scriptures.reduce((a, s) => a + s.cost, 0);
+  const sectDailySink = (GameConfig.sect.dailyContribCap / GameConfig.sect.offeringContrib) * GameConfig.sect.offeringStone;
+  const totalOnce = plotSink + techSink + petSink + scriptureSink;
+
+  const c0 = GameConfig.crops[0];
+  const herbPerHour = (c0.yield - c0.seedCost) / c0.growthTime * 3600;
+  const stonePerHour = herbPerHour * GameConfig.maxPlots * (GameConfig.shop.sell[0].price / GameConfig.shop.sell[0].amount);
+
+  R.sinks = {
+    oneTimeTotal: totalOnce,
+    plotSink, techSink, petSink, scriptureSink,
+    dailySectSink: sectDailySink,
+    stonePerHour: Math.round(stonePerHour),
+  };
+  log(`  灵石一次性沉没口合计：${totalOnce}（扩地 ${plotSink} / 功法 ${techSink} / 宠物 ${petSink} / 宗门功法 ${scriptureSink}）`);
+  log(`  持续沉没口：宗门供奉 ${sectDailySink}/日 ≈ ${(sectDailySink / stonePerHour).toFixed(1)} 小时灵田产出`);
+  log(`  稳态收入 ${Math.round(stonePerHour)}/h → 买完全部一次性内容需 ${(totalOnce / stonePerHour).toFixed(1)} 小时`);
+}

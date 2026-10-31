@@ -1211,6 +1211,26 @@ const UI = {
     if (el) el.hidden = true;
   },
 
+  /**
+   * 运行异常时的常驻横幅。
+   * 只在主循环连续出错后调用一次，作用是让玩家知道"卡了但没死"，
+   * 并能先把存档导出去，而不是对着一个定格页面反复刷新。
+   */
+  showFatalBanner(msg) {
+    if (document.getElementById('fatal-banner')) return;
+    const bar = document.createElement('div');
+    bar.id = 'fatal-banner';
+    bar.className = 'fatal-banner';
+    bar.innerHTML = `<span>${msg}</span>`;
+    const close = document.createElement('button');
+    close.className = 'fatal-banner-close';
+    close.type = 'button';
+    close.textContent = '知道了';
+    close.addEventListener('click', () => bar.remove());
+    bar.appendChild(close);
+    document.body.appendChild(bar);
+  },
+
   showModal(title, bodyHtml) {
     document.getElementById('modal-title').textContent = title;
     document.getElementById('modal-body').innerHTML = bodyHtml;

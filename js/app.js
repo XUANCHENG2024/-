@@ -8,6 +8,14 @@
   'use strict';
 
   document.addEventListener('DOMContentLoaded', () => {
+    // 双启动保护：脚本被重复引入时会出现两个主循环，游戏以双倍速运行且互相抢存档。
+    // 这类问题极难从现象上定位，不如在入口直接拦住。
+    if (window.__dxBooted) {
+      console.warn('[App] 已启动过，忽略重复初始化');
+      return;
+    }
+    window.__dxBooted = true;
+
     console.log('[App] DesktopXianxia Web v0.2 starting...');
 
     // 1. 初始化引擎（加载存档）
@@ -46,32 +54,53 @@
     // 6. 主循环
     let lastLogicTick = 0;
     let lastVisitorCheck = 0;
+    let loopErrors = 0;
+    let degraded = false;
     const LOGIC_INTERVAL = 100;
+    const DEGRADED_INTERVAL = 1000;   // 连续异常后降速，避免每帧刷错误
     const VISITOR_CHECK_INTERVAL = 5000; // 每5秒检测一次访客
 
     function gameLoop(timestamp) {
-      if (timestamp - lastLogicTick >= LOGIC_INTERVAL) {
-        const dt = 0.1;
-        GameEngine.tick();
-        WeatherSystem.tick(dt);
+      try {
+        const interval = degraded ? DEGRADED_INTERVAL : LOGIC_INTERVAL;
+        if (timestamp - lastLogicTick >= interval) {
+          const dt = 0.1;
+          GameEngine.tick();
+          WeatherSystem.tick(dt);
 
-        // 日常目标进度跟踪
-        if (GameEngine._isMeditating) {
-          DailyGoals.increment('meditate', 0.1);
+          // 日常目标进度跟踪
+          if (GameEngine._isMeditating) {
+            DailyGoals.increment('meditate', 0.1);
+          }
+
+          // 访客检测（低频，受宠物加成影响）
+          if (!degraded && timestamp - lastVisitorCheck >= VISITOR_CHECK_INTERVAL) {
+            lastVisitorCheck = timestamp;
+            UI._checkVisitor();
+          }
+
+          // 角色心绪：已通过 GameEngine.on('tick') 订阅，此处不再重复调用
+          // 标签页隐藏时不刷新 UI（省电，也让后台更安静）
+          if (!document.hidden) UI.refreshAll();
+          lastLogicTick = timestamp;
+          if (loopErrors > 0) loopErrors = 0;   // 成功一帧即视为恢复
         }
-
-        // 访客检测（低频，受宠物加成影响）
-        if (timestamp - lastVisitorCheck >= VISITOR_CHECK_INTERVAL) {
-          lastVisitorCheck = timestamp;
-          UI._checkVisitor();
-        }
-
-        // 角色心绪：已通过 GameEngine.on('tick') 订阅，此处不再重复调用
-        // 标签页隐藏时不刷新 UI（省电，也让后台更安静）
-        if (!document.hidden) UI.refreshAll();
+      } catch (err) {
+        // 关键：一帧内的任何异常都不能让循环断掉。
+        // 原实现的 requestAnimationFrame 在 try 之外、且在出错点之后，
+        // 一旦 tick 里任何子系统抛错，就再也不会续帧 —— 整个游戏永久定格，
+        // 没有任何提示，玩家只能刷新，而刷新后往往立刻复现。
+        loopErrors++;
+        console.error('[App] 主循环异常（已跳过本帧，循环继续）：', err);
         lastLogicTick = timestamp;
+        if (loopErrors >= 3 && !degraded) {
+          degraded = true;
+          UI.showFatalBanner('运行时出现异常，已降速运行以免卡死。可在「系统」里导出存档后刷新页面。');
+        }
+      } finally {
+        // 无论成功与否都必须续帧
+        requestAnimationFrame(gameLoop);
       }
-      requestAnimationFrame(gameLoop);
     }
     requestAnimationFrame(gameLoop);
 
